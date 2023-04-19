@@ -12,27 +12,19 @@ from pyspark.sql.functions import col, from_json, schema_of_json, current_timest
 from pyspark.sql.types import StructType, StructField, StringType, LongType, IntegerType
 
 '''
-Glue Hudi Test
-通过 Glue 消费Kafka的数据，写S3（Hudi）。多表，支持I U D
+Glue DelteLake Test
+通过 Glue 消费Kafka的数据，写S3（DeltaLake）。多表，支持I U D
 '''
 ## @params: [JOB_NAME]
 args = getResolvedOptions(sys.argv, ['JOB_NAME'])
 
 
-
-HUDI_FORMAT = "org.apache.hudi"
 config = {
     "table_name": "user_order_list",
-    "database_name": "hudi",
-
-    "primary_key": "id",
-    "sort_key": "id",
-    "commits_to_retain": "4",
+    "database_name": "deltalakedb",
     "streaming_db": "kafka_db",
     "streaming_table": "kafka_iceberg_norrisdb_01"
 }
-
-
 
 #源表对应iceberg目标表（多表处理）
 tableIndexs = {
@@ -41,7 +33,7 @@ tableIndexs = {
     "table02": "table02",
     "table01": "table01",
     "user_order_list_small_file": "user_order_list_small_file",
-    "user_order_list": "user_order_list_01",
+    "user_order_list": "user_order_list",
     "user_order_main": "user_order_main",
     "user_order_mor": "user_order_mor",
     "tb_schema_evolution": "tb_schema_evolution"
@@ -50,7 +42,11 @@ tableIndexs = {
 
 args = getResolvedOptions(sys.argv, ['JOB_NAME'])
 
-spark = SparkSession.builder.config('spark.serializer','org.apache.spark.serializer.KryoSerializer').getOrCreate()
+spark = SparkSession.builder.config('spark.sql.extensions','io.delta.sql.DeltaSparkSessionExtension') \
+    .config('spark.sql.catalog.spark_catalog','org.apache.spark.sql.delta.catalog.DeltaCatalog') \
+    .config('spark.databricks.delta.schema.autoMerge.enabled','true') \
+    .getOrCreate()
+
 glueContext = GlueContext(spark.sparkContext)
 job = Job(glueContext)
 job.init(args['JOB_NAME'], args)
@@ -64,7 +60,7 @@ logger.info('Initialization.')
 output_path = "s3://myemr-bucket-01/data/"
 job_time_string = datetime.now().strftime("%Y%m%d%")
 s3_target = output_path + job_time_string
-checkpoint_location = args["TempDir"] + "/" + args['JOB_NAME'] + "/checkpoint/" + "checkpoint-04" + "/"
+checkpoint_location = args["TempDir"] + "/" + args['JOB_NAME'] + "/checkpoint/" + "checkpoint-05" + "/"
 
 # 把 dataframe 转换成字符串，在logger中输出
 def getShowString(df, n=10, truncate=True, vertical=False):
@@ -88,8 +84,6 @@ def processBatch(data_frame,batchId):
         logger.info("############  Create DataFrame  ############### \r\n" + getShowString(dataJsonDF,truncate = False))
 
         dataUpsert = dataJsonDF.filter("op in ('c','r','u') and after is not null")
-        # 过滤 区分 insert upsert delete
-        # dataUpsert = dataJsonDF.filter("op in ('u') and after is not null")
 
         dataDelete = dataJsonDF.filter("op in ('d') and before is not null")
 
@@ -100,72 +94,95 @@ def processBatch(data_frame,batchId):
             schemaSource = schema_of_json(sourceJson[0])
 
             # 获取多表
-            datatables = dataUpsert.select(from_json(col("source").cast("string"), schemaSource).alias("SOURCE")) \
+            dataTables = dataUpsert.select(from_json(col("source").cast("string"),schemaSource).alias("SOURCE")) \
                 .select(col("SOURCE.db"),col("SOURCE.table")).distinct()
             # logger.info("############  MutiTables  ############### \r\n" + getShowString(dataTables,truncate = False))
-            rowTables = datatables.collect()
+            rowTables = dataTables.collect()
 
             for cols in rowTables :
-                tablename = cols[1]
-                dataDF = dataUpsert.select(col("after"),
+                tableName = cols[1]
+                dataDF = dataUpsert.select(col("after"), \
                                            from_json(col("source").cast("string"),schemaSource).alias("SOURCE")) \
-                    .filter("SOURCE.table = '" + tablename + "'")
-                datajson = dataDF.select('after').first()
-                schemaData = schema_of_json(datajson[0])
-                logger.info("############  Insert Into-GetSchema-FirstRow:" + datajson[0])
+                    .filter("SOURCE.table = '" + tableName + "'")
+                dataJson = dataDF.select('after').first()
+                schemaData = schema_of_json(dataJson[0])
+                logger.info("############  Insert Into-GetSchema-FirstRow:" + dataJson[0])
 
                 dataDFOutput = dataDF.select(from_json(col("after").cast("string"),schemaData).alias("DFADD")).select(col("DFADD.*"), current_timestamp().alias("ts"))
                 # logger.info("############  INSERT INTO  ############### \r\n" + getShowString(dataDFOutput,truncate = False))
-                InsertDataLake(tablename, dataDFOutput)
-
+                InsertDataLake(tableName, dataDFOutput)
 
         if(dataDelete.count() > 0):
-            sourcejson = dataDelete.select('source').first()
+            # dataDelete = dataDeleteDYF.toDF()
+            sourceJson = dataDelete.select('source').first()
+            # schemaData = schema_of_json([rowjson[0]])
 
-            schemasource = schema_of_json(sourcejson[0])
-            datatables = dataDelete.select(from_json(col("source").cast("string"), schemasource).alias("SOURCE")) \
+            schemaSource = schema_of_json(sourceJson[0])
+            dataTables = dataDelete.select(from_json(col("source").cast("string"),schemaSource).alias("SOURCE")) \
                 .select(col("SOURCE.db"),col("SOURCE.table")).distinct()
 
-            rowtables = datatables.collect()
-            for cols in rowtables :
-                tablename = cols[1]
-                dataDF = dataDelete.select(col("before"),
-                                           from_json(col("source").cast("string"), schemasource).alias("SOURCE")) \
-                    .filter("SOURCE.table = '" + tablename + "'")
+            # logger.info("############  Auto Schema Recognize  ############### \r\n" + getShowString(dataDelete,truncate = False))
+
+            rowTables = dataTables.collect()
+            for cols in rowTables :
+                tableName = cols[1]
+                dataDF = dataDelete.select(col("before"), \
+                                           from_json(col("source").cast("string"),schemaSource).alias("SOURCE")) \
+                    .filter("SOURCE.table = '" + tableName + "'")
                 dataJson = dataDF.select('before').first()
 
                 schemaData = schema_of_json(dataJson[0])
                 dataDFOutput = dataDF.select(from_json(col("before").cast("string"),schemaData).alias("DFDEL")).select(col("DFDEL.*"))
-                InsertDataLake(tablename, dataDFOutput)
+                # logger.info("############  DELETE FROM  ############### \r\n" + getShowString(dataDFOutput,truncate = False))
+                InsertDataLake(tableName,dataDFOutput)
 
 def InsertDataLake(tableName,dataFrame):
 
     database_name = config["database_name"]
     table_name = tableIndexs[tableName]
-    logger.info("##############  Func:InputDataLake [ " + tableName + "] ############# \r\n"
-                 + getShowString(dataFrame, truncate=False))
+    logger.info("##############  Func:InputDataLake [ "+ tableName +  "] ############# \r\n"
+                 + getShowString(dataFrame,truncate = False))
 
-    target = "s3://myemr-bucket-01/data/hudi/" + table_name
+    target = "s3://myemr-bucket-01/data/deltalakedb/" + table_name
 
-    write_options={
-        "hoodie.table.name": table_name,
-        "className" : "org.apache.hudi",
-        "hoodie.datasource.write.storage.type": "COPY_ON_WRITE",
-        "hoodie.datasource.write.operation": "upsert",
-        "hoodie.datasource.write.recordkey.field": config["primary_key"],
-        "hoodie.datasource.write.precombine.field": config["sort_key"],
-        "hoodie.datasource.hive_sync.enable": "true",
-        "hoodie.datasource.hive_sync.database": database_name,
-        "hoodie.datasource.hive_sync.table": table_name,
-        "hoodie.datasource.hive_sync.partition_extractor_class": "org.apache.hudi.hive.MultiPartKeysValueExtractor",
-        "hoodie.datasource.hive_sync.use_jdbc": "false",
-        "hoodie.datasource.hive_sync.mode": "hms",
+    additional_options={
         "path": target
     }
 
-    glueContext.write_dynamic_frame.from_options(frame=DynamicFrame.fromDF(dataFrame, glueContext, "outputDF"),
-                                                 connection_type="custom.spark",
-                                                 connection_options=write_options)
+    dataFrame.write.format("delta") \
+        .options(**additional_options) \
+        .mode('append') \
+        .save()
+def MergeIntoDataLake(tableName,dataFrame):
+    # dataUpsertDF = DynamicFrame.fromDF(dataFrame, glueContext, "from_data_frame")
+    # outputUpsert = dataUpsertDF.toDF()
+    logger.info("##############  Func:InputDataLake [ "+ tableName +  "] ############# \r\n"
+                + getShowString(dataFrame,truncate = False))
+
+    database_name = config["database_name"]
+    table_name = tableIndexs[tableName]
+    #需要做一次转换，不然spark session获取不到
+    dyDataFrame = DynamicFrame.fromDF(dataFrame, glueContext, "from_data_frame").toDF();
+    TempTable = "tmp_" + tableName + "_upsert"
+    dyDataFrame.createOrReplaceTempView(TempTable)
+    # queryDF = spark.sql(f"""select * from {TempTable}""")
+    # logger.info("##############  Func:Temp Table [ temp_table] ############# \r\n"
+    #             + getShowString(queryDF,truncate = False))
+
+    ###如果表不存在，创建一个空表
+    creattbsql = f"""CREATE TABLE IF NOT EXISTS {database_name}.{table_name}
+        USING DELTA
+        LOCATION 's3://myemr-bucket-01/data/{database_name}/{table_name}'
+    """
+    logger.info("####### IF table not exists, create it:" + creattbsql)
+    spark.sql(creattbsql)
+
+    query = f"""MERGE INTO {database_name}.{table_name} t USING (select * from {TempTable}) u ON t.ID = u.ID
+            WHEN MATCHED THEN UPDATE
+                SET *
+            WHEN NOT MATCHED THEN INSERT * """
+    logger.info("####### Execute SQL:" + query)
+    spark.sql(query)
 
 kafka_options = {
       "connectionName": "kafka_conn_cdc",

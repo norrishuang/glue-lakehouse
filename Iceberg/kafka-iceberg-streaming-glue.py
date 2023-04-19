@@ -28,7 +28,8 @@ args = getResolvedOptions(sys.argv, ['JOB_NAME',
                                      'starting_offsets_of_kafka_topic',
                                      'topics',
                                      'icebergdb',
-                                     'warehouse'])
+                                     'warehouse',
+                                     'mskconnect'])
 
 '''
 获取Glue Job参数
@@ -37,16 +38,13 @@ STARTING_OFFSETS_OF_KAFKA_TOPIC = args.get('starting_offsets_of_kafka_topic', 'l
 TOPICS = args.get('topics')
 ICEBERG_DB = args.get('icebergdb')
 WAREHOUSE = args.get('warehouse')
-
-
+KAFKA_CONNECT = args.get('mskconnect')
 
 config = {
     # "table_name": "iceberg_portfolio_kc",
     "database_name": ICEBERG_DB,
     "warehouse": WAREHOUSE,
     "dynamic_lock_table": "datacoding_iceberg_lock_table",
-    "streaming_db": "kafka_db",
-    "streaming_table": "kafka_iceberg_norrisdb_01"
 }
 
 spark = SparkSession.builder \
@@ -72,15 +70,13 @@ logger.info("starting_offsets_of_kafka_topic:" + STARTING_OFFSETS_OF_KAFKA_TOPIC
 logger.info("topics:" + TOPICS)
 logger.info("icebergdb:" + ICEBERG_DB)
 logger.info("warehouse:" + WAREHOUSE)
+logger.info("mskconnect:" + KAFKA_CONNECT)
+
 
 
 def writeJobLogger(logs):
     logger.info(args['JOB_NAME'] + " [custom log]:{0}".format(logs))
 
-# S3 sink locations
-# output_path = "s3://myemr-bucket-01/data/"
-# job_time_string = datetime.now().strftime("%Y%m%d%")
-# s3_target = output_path + job_time_string
 checkpoint_location = args["TempDir"] + "/" + args['JOB_NAME'] + "/checkpoint/" + "20230409-02" + "/"
 
 # 把 dataframe 转换成字符串，在logger中输出
@@ -145,7 +141,7 @@ def processBatch(data_frame, batchId):
 
             # 获取多表
             datatables = dataUpsert.select(from_json(col("source").cast("string"), schemasource).alias("SOURCE")) \
-                .select(col("SOURCE.db"),col("SOURCE.table")).distinct()
+                .select(col("SOURCE.db"), col("SOURCE.table")).distinct()
             # logger.info("############  MutiTables  ############### \r\n" + getShowString(dataTables,truncate = False))
             rowtables = datatables.collect()
 
@@ -176,8 +172,6 @@ def processBatch(data_frame, batchId):
             dataTables = dataDelete.select(from_json(col("source").cast("string"),schemaSource).alias("SOURCE")) \
                 .select(col("SOURCE.db"),col("SOURCE.table")).distinct()
 
-            # logger.info("############  Auto Schema Recognize  ############### \r\n" + getShowString(dataDelete,truncate = False))
-
             rowTables = dataTables.collect()
             for cols in rowTables :
                 tableName = cols[1]
@@ -188,16 +182,11 @@ def processBatch(data_frame, batchId):
 
                 schemaData = schema_of_json(dataJson[0])
                 dataDFOutput = dataDF.select(from_json(col("before").cast("string"),schemaData).alias("DFDEL")).select(col("DFDEL.*"))
-                # logger.info("############  DELETE FROM  ############### \r\n" + getShowString(dataDFOutput,truncate = False))
                 DeleteDataFromDataLake(tableName,dataDFOutput)
 
 def InsertDataLake(tableName,dataFrame):
-    # logger.info("##############  Func:InputDataLake [ "+ tableName +  "] ############# \r\n"
-    #             + getShowString(dataFrame,truncate = False))
 
     database_name = config["database_name"]
-    # table_name = tableIndexs[tableName]
-
     # partition as id
     dyDataFrame = DynamicFrame.fromDF(dataFrame, glueContext, "from_data_frame").toDF().repartition(4, col("id"));
 
@@ -213,6 +202,8 @@ def InsertDataLake(tableName,dataFrame):
           USING iceberg 
           TBLPROPERTIES ('write.distribution-mode'='hash',
           'format-version'='2',
+          'write.metadata.delete-after-commit.enabled'='true',
+          'write.metadata.previous-versions-max'='10',
           'write.spark.accept-any-schema'='true')"""
     writeJobLogger("####### IF table not exists, create it:" + creattbsql)
     spark.sql(creattbsql)
@@ -246,11 +237,10 @@ def DeleteDataFromDataLake(tableName,dataFrame):
     dyDataFrame.createOrReplaceTempView("tmp_" + tableName + "_delete")
     query = f"""DELETE FROM glue_catalog.{database_name}.{tableName} AS t1 
         where EXISTS (SELECT ID FROM tmp_{tableName}_delete WHERE t1.ID = ID)"""
-    # {"data":{"id":1,"reward":10,"channels":"['email', 'mobile', 'social']","difficulty":"10","duration":"7","offer_type":"bogo","offer_id":"ae264e3637204a6fb9bb56bc8210ddfd"},"op":"+I"}
     spark.sql(query)
 # Script generated for node Apache Kafka
 kafka_options = {
-    "connectionName": "msk-serverless-connector",
+    "connectionName": KAFKA_CONNECT,
     "topicName": TOPICS,
     "inferSchema": "true",
     "classification": "json",
@@ -270,7 +260,7 @@ dataframe_ApacheKafka_source = glueContext.create_data_frame.from_options(
 glueContext.forEachBatch(frame=dataframe_ApacheKafka_source,
                          batch_function=processBatch,
                          options={
-                             "windowSize": "15 seconds",
+                             "windowSize": "30 seconds",
                              "recordPollingLimit": "50000",
                              "checkpointLocation": checkpoint_location,
                              "batchMaxRetries": 1

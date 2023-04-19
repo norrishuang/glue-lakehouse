@@ -4,7 +4,7 @@
 
 AWS Glue 4.0 版本已经支持Hudi，Iceberg，DetlaLake
 
-**版本说明**
+## **版本说明**
 
 | Data Lake  | Glue 4.0 | Glue 3.0 |
 | ---------- | -------- | -------- |
@@ -14,14 +14,7 @@ AWS Glue 4.0 版本已经支持Hudi，Iceberg，DetlaLake
 
 
 
-#### Hudi
-
-- 可以轻松更改 Hudi 表的Schema，以适应不断变化的数据模式。通过ALTER TABLE语法为 Spark 3.1.x 和 Spark 3.2.1 添加了 Spark SQL DDL 支持（实验性）
-- Hudi 表可以直接通过 AWS 开发工具包同步到 AWS Glue Data Catalog。用户可以设置 org.apache.hudi.aws.sync.AwsGlueCatalogSyncTool为HoodieDeltaStreamer 的同步工具实现，并使 Hudi 表在 Glue Catalog中可被发现。
-- Hudi 表的元数据（特别是模式和上次同步提交时间）可以同步到DataHub。用户可以将目标表设置org.apache.hudi.sync.datahub.DataHubSyncTool为HoodieDeltaStreamer的同步工具实现，并将目标表同步为DataHub中的Dataset。
-- 添加了对 Spark 3.2 的支持，并附带了 Parquet 1.12， 支持Hudi（COW表）加密功能。
-
-#### Iceberg
+## Iceberg
 
 - merge-on-read 支持通过 MERGE and UPDATE SQL语法（Spark 3.2 或更高版本）
 
@@ -35,7 +28,31 @@ AWS Glue 4.0 版本已经支持Hudi，Iceberg，DetlaLake
 
 - - 设置TableProperties:”write.spark.accept-any-schema”为true。Spark默认在plan的时候会检查写入的DataFrame和表的schema是否匹配，不匹配就抛出异常。所以需要增加一个TableCapability（TableCapability.ACCEPT_ANY_SCHEMA），这样Spark就不会做这个检查，交由具体的DataSource来检查。`df.writeTo(tableName).option(“merge-schema”, “true”).XX`
 
-#### DeltaLake
+### Iceberg Job 配置说明
+
+以下配置请在Glue Job details 的 **Job parameters** 中配置
+
+| 配置参数                          | 配置说明                                                     |      |
+| --------------------------------- | ------------------------------------------------------------ | ---- |
+| --conf                            | spark.sql.extensions=org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions |      |
+| --datalake-formats                | Iceberg                                                      |      |
+| --icebergdb                       | Icebergdb                                                    |      |
+| --starting_offsets_of_kafka_topic | earliest                                                     |      |
+| --topics                          |                                                              |      |
+| --user-jars-first                 | True                                                         |      |
+| --warehouse                       | s3://myemr-bucket-01/data/iceberg-folder/                    |      |
+| --mskconnect                      | msk-serverless-connector                                     |      |
+
+
+
+## Hudi
+
+- 可以轻松更改 Hudi 表的Schema，以适应不断变化的数据模式。通过ALTER TABLE语法为 Spark 3.1.x 和 Spark 3.2.1 添加了 Spark SQL DDL 支持（实验性）
+- Hudi 表可以直接通过 AWS 开发工具包同步到 AWS Glue Data Catalog。用户可以设置 org.apache.hudi.aws.sync.AwsGlueCatalogSyncTool为HoodieDeltaStreamer 的同步工具实现，并使 Hudi 表在 Glue Catalog中可被发现。
+- Hudi 表的元数据（特别是模式和上次同步提交时间）可以同步到DataHub。用户可以将目标表设置org.apache.hudi.sync.datahub.DataHubSyncTool为HoodieDeltaStreamer的同步工具实现，并将目标表同步为DataHub中的Dataset。
+- 添加了对 Spark 3.2 的支持，并附带了 Parquet 1.12， 支持Hudi（COW表）加密功能。
+
+## DeltaLake
 
 - **2.1.0 版本开始支持 Apache Spark 3.3.**
 - **支持SQL中的[TIMESTAMP | VERSION] AS OF。在** Spark 3.3 中，Delta现在支持*SQL中的[时间旅行](https://docs.delta.io/2.1.0/delta-batch.html#query-an-older-snapshot-of-a-table-time-travel)* ，方便查询历史版本的数据。时间旅行在SQL中和通过DataFrame API都可以使用。
