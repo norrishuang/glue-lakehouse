@@ -5,13 +5,12 @@ from pyspark.sql.session import SparkSession
 from awsglue.context import GlueContext
 
 from awsglue.job import Job
-from datetime import datetime
 from awsglue import DynamicFrame
 from pyspark.sql.functions import col, from_json, schema_of_json, current_timestamp
 from pyspark.sql.types import StructType, StructField, StringType, LongType
 
 '''
-Glue Iceberg
+Glue -> Kafka -> Iceberg -> S3
 通过 Glue 消费 MSK/MSK Serverless 的数据，写S3（Iceberg）。多表，支持I U D
 
 1. 支持多表，通过MSK Connect 将数据库的数据CDC到MSK后，使用 [topics] 配置参数，可以接入多个topic的数据。
@@ -21,7 +20,10 @@ Glue Iceberg
     (2). topics: 消费的Topic名称，如果消费多个topic，之间使用逗号分割（,）,例如 kafka1.db1.topica,kafka1.db2.topicb
     (3). icebergdb: 数据写入的iceberg database名称
     (4). warehouse: iceberg warehouse path
-
+    (5). datalake-formats: iceberg 指定使用哪一种datalake技术，包括iceberg hudi deltalake
+    (6). mskconnect: MSK Connect 名称，用以获取MSK Serverless的数据
+    (7). user-jars-first: True 目前Glue 集成 iceberg 必须设定的参数。
+4. Glue 需要使用 4.0引擎，4.0 支持 spark 3.3，只有在spark3.3版本中，才能支持iceberg的schame自适应。
 '''
 ## @params: [JOB_NAME]
 args = getResolvedOptions(sys.argv, ['JOB_NAME',
@@ -41,10 +43,8 @@ WAREHOUSE = args.get('warehouse')
 KAFKA_CONNECT = args.get('mskconnect')
 
 config = {
-    # "table_name": "iceberg_portfolio_kc",
     "database_name": ICEBERG_DB,
-    "warehouse": WAREHOUSE,
-    "dynamic_lock_table": "datacoding_iceberg_lock_table",
+    "warehouse": WAREHOUSE
 }
 
 spark = SparkSession.builder \
@@ -230,13 +230,12 @@ def MergeIntoDataLake(tableName,dataFrame):
     logger.info("####### Execute SQL:" + query)
     spark.sql(query)
 
-def DeleteDataFromDataLake(tableName,dataFrame):
+def DeleteDataFromDataLake(tableName, dataFrame):
     database_name = config["database_name"]
-    # table_name = tableIndexs[tableName]
     dyDataFrame = DynamicFrame.fromDF(dataFrame, glueContext, "from_data_frame").toDF()
     dyDataFrame.createOrReplaceTempView("tmp_" + tableName + "_delete")
     query = f"""DELETE FROM glue_catalog.{database_name}.{tableName} AS t1 
-        where EXISTS (SELECT ID FROM tmp_{tableName}_delete WHERE t1.ID = ID)"""
+         where EXISTS (SELECT ID FROM tmp_{tableName}_delete WHERE t1.ID = ID)"""
     spark.sql(query)
 # Script generated for node Apache Kafka
 kafka_options = {
