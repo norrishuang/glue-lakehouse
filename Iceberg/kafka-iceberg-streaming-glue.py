@@ -6,8 +6,8 @@ from awsglue.context import GlueContext
 
 from awsglue.job import Job
 from awsglue import DynamicFrame
-from pyspark.sql.functions import col, from_json, schema_of_json, current_timestamp
-from pyspark.sql.types import StructType, StructField, StringType, LongType
+from pyspark.sql.functions import col, from_json, schema_of_json, current_timestamp, to_timestamp, unix_timestamp
+from pyspark.sql.types import StructType, StructField, StringType, LongType, TimestampType
 
 '''
 Glue -> Kafka -> Iceberg -> S3
@@ -24,6 +24,7 @@ Glue -> Kafka -> Iceberg -> S3
     (6). mskconnect: MSK Connect 名称，用以获取MSK Serverless的数据
     (7). user-jars-first: True 目前Glue 集成 iceberg 必须设定的参数。
 4. Glue 需要使用 4.0引擎，4.0 支持 spark 3.3，只有在spark3.3版本中，才能支持iceberg的schame自适应。
+5. MSK Serverless 认证只支持IAM，因此在Kafka连接的时候需要包含IAM认证相关的代码。
 '''
 ## @params: [JOB_NAME]
 args = getResolvedOptions(sys.argv, ['JOB_NAME',
@@ -116,8 +117,8 @@ def processBatch(data_frame, batchId):
             schemaSource = schema_of_json(sourceJson[0])
 
             # 获取多表
-            datatables = dataInsert.select(from_json(col("source").cast("string"),schemaSource).alias("SOURCE")) \
-                .select(col("SOURCE.db"),col("SOURCE.table")).distinct()
+            datatables = dataInsert.select(from_json(col("source").cast("string"), schemaSource).alias("SOURCE")) \
+                .select(col("SOURCE.db"), col("SOURCE.table")).distinct()
             # logger.info("############  MutiTables  ############### \r\n" + getShowString(dataTables,truncate = False))
             rowtables = datatables.collect()
 
@@ -130,7 +131,18 @@ def processBatch(data_frame, batchId):
                 schemadata = schema_of_json(datajson[0])
                 writeJobLogger("############  Insert Into-GetSchema-FirstRow:" + datajson[0])
 
-                dataDFOutput = dataDF.select(from_json(col("after").cast("string"),schemadata).alias("DFADD")).select(col("DFADD.*"), current_timestamp().alias("ts"))
+                '''识别时间字段'''
+
+                dataDFOutput = dataDF.select(from_json(col("after").cast("string"), schemadata).alias("DFADD")).select(col("DFADD.*"), current_timestamp().alias("ts"))
+                # writeJobLogger("############ dataDFOutput Test Timestamp convert:" + getShowString(dataDFOutput, truncate=False))
+                # dataDFOutput.printSchema()
+                ### 对时间字段UTC 强制转换
+                #df2.withColumn("eventTime1", unix_timestamp($"eventTime", "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'").cast(TimestampType))
+                for cols in dataDFOutput.schema:
+                    if cols.name in ['created_at', 'updated_at']:
+                        dataDFOutput = dataDFOutput.withColumn(cols.name, to_timestamp(col(cols.name)))
+                        writeJobLogger("Covert time type-Column:" + cols.name)
+                # dataDFOutput.printSchema()
                 # logger.info("############  INSERT INTO  ############### \r\n" + getShowString(dataDFOutput,truncate = False))
                 InsertDataLake(tableName, dataDFOutput)
 
@@ -153,42 +165,44 @@ def processBatch(data_frame, batchId):
 
                 ##由于merge into schema顺序的问题，这里schema从表中获取（顺序问题待解决）
                 database_name = config["database_name"]
-                # table_name = tableIndexs[tableName]
                 schemaData = spark.table(f"glue_catalog.{database_name}.{tableName}").schema
-                # dataJson = dataDF.select('after').first()
-                # schemaData = schema_of_json(dataJson[0])
 
-                dataDFOutput = dataDF.select(from_json(col("after").cast("string"),schemaData).alias("DFADD")).select(col("DFADD.*"), current_timestamp().alias("ts"))
-                writeJobLogger("############  MERGE INTO  ############### \r\n" + getShowString(dataDFOutput,truncate = False))
+                dataDFOutput = dataDF.select(from_json(col("after").cast("string"), schemaData).alias("DFADD")).select(col("DFADD.*"), current_timestamp().alias("ts"))
+
+                ## 将时间字同步到UTC
+                for cols in dataDFOutput.schema:
+                    if cols.name in ['created_at', 'updated_at']:
+                        dataDFOutput = dataDFOutput.withColumn(cols.name, to_timestamp(col(cols.name)))
+                        writeJobLogger("Covert time type-Column:" + cols.name)
+
+                writeJobLogger("############  MERGE INTO  ############### \r\n" + getShowString(dataDFOutput, truncate = False))
                 MergeIntoDataLake(tableName, dataDFOutput)
 
 
         if(dataDelete.count() > 0):
-            # dataDelete = dataDeleteDYF.toDF()
             sourceJson = dataDelete.select('source').first()
-            # schemaData = schema_of_json([rowjson[0]])
 
             schemaSource = schema_of_json(sourceJson[0])
-            dataTables = dataDelete.select(from_json(col("source").cast("string"),schemaSource).alias("SOURCE")) \
-                .select(col("SOURCE.db"),col("SOURCE.table")).distinct()
+            dataTables = dataDelete.select(from_json(col("source").cast("string"), schemaSource).alias("SOURCE")) \
+                .select(col("SOURCE.db"), col("SOURCE.table")).distinct()
 
             rowTables = dataTables.collect()
-            for cols in rowTables :
+            for cols in rowTables:
                 tableName = cols[1]
                 dataDF = dataDelete.select(col("before"),
-                                           from_json(col("source").cast("string"),schemaSource).alias("SOURCE")) \
+                                           from_json(col("source").cast("string"), schemaSource).alias("SOURCE")) \
                     .filter("SOURCE.table = '" + tableName + "'")
                 dataJson = dataDF.select('before').first()
 
                 schemaData = schema_of_json(dataJson[0])
-                dataDFOutput = dataDF.select(from_json(col("before").cast("string"),schemaData).alias("DFDEL")).select(col("DFDEL.*"))
-                DeleteDataFromDataLake(tableName,dataDFOutput)
+                dataDFOutput = dataDF.select(from_json(col("before").cast("string"), schemaData).alias("DFDEL")).select(col("DFDEL.*"))
+                DeleteDataFromDataLake(tableName, dataDFOutput)
 
 def InsertDataLake(tableName,dataFrame):
 
     database_name = config["database_name"]
     # partition as id
-    dyDataFrame = DynamicFrame.fromDF(dataFrame, glueContext, "from_data_frame").toDF().repartition(4, col("id"));
+    dyDataFrame = DynamicFrame.fromDF(dataFrame, glueContext, "from_data_frame").toDF().repartition(4, col("id"))
 
     ###如果表不存在，创建一个空表
     # TempTable = "tmp_" + tableName + "_upsert"
@@ -212,13 +226,13 @@ def InsertDataLake(tableName,dataFrame):
         .option("merge-schema", "true") \
         .option("check-ordering", "false").append()
 
-def MergeIntoDataLake(tableName,dataFrame):
+def MergeIntoDataLake(tableName, dataFrame):
 
     # logger.info("##############  Func:MergeIntoDataLake [ "+ tableName +  "] ############# \r\n"
     #             + getShowString(dataFrame,truncate = False))
     database_name = config["database_name"]
     # table_name = tableIndexs[tableName]
-    dyDataFrame = DynamicFrame.fromDF(dataFrame, glueContext, "from_data_frame").toDF();
+    dyDataFrame = DynamicFrame.fromDF(dataFrame, glueContext, "from_data_frame").toDF()
 
     TempTable = "tmp_" + tableName + "_upsert"
     dyDataFrame.createOrReplaceTempView(TempTable)
