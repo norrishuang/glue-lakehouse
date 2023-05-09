@@ -3,11 +3,13 @@ import sys
 from awsglue.utils import getResolvedOptions
 from pyspark.sql.session import SparkSession
 from awsglue.context import GlueContext
-
+import json
 from awsglue.job import Job
 from awsglue import DynamicFrame
-from pyspark.sql.functions import col, from_json, schema_of_json, current_timestamp, to_timestamp, unix_timestamp
-from pyspark.sql.types import StructType, StructField, StringType, LongType, TimestampType
+from pyspark.sql.functions import col, from_json, schema_of_json, current_timestamp, to_timestamp
+from pyspark.sql.types import StructType, StructField, StringType, LongType
+from urllib.parse import urlparse
+import boto3
 
 '''
 Glue -> Kafka -> Iceberg -> S3
@@ -26,13 +28,28 @@ Glue -> Kafka -> Iceberg -> S3
 4. Glue 需要使用 4.0引擎，4.0 支持 spark 3.3，只有在spark3.3版本中，才能支持iceberg的schame自适应。
 5. MSK Serverless 认证只支持IAM，因此在Kafka连接的时候需要包含IAM认证相关的代码。
 '''
+
+'''
+读去表配置文件
+'''
+def load_tables_config(aws_region, config_s3_path):
+    o = urlparse(config_s3_path, allow_fragments=False)
+    client = boto3.client('s3', region_name=aws_region)
+    data = client.get_object(Bucket=o.netloc, Key=o.path.lstrip('/'))
+    file_content = data['Body'].read().decode("utf-8")
+    json_content = json.loads(file_content)
+    return json_content
+
+
 ## @params: [JOB_NAME]
 args = getResolvedOptions(sys.argv, ['JOB_NAME',
                                      'starting_offsets_of_kafka_topic',
                                      'topics',
                                      'icebergdb',
                                      'warehouse',
-                                     'mskconnect'])
+                                     'mskconnect',
+                                     'tablejsonfile',
+                                     'region'])
 
 '''
 获取Glue Job参数
@@ -42,11 +59,16 @@ TOPICS = args.get('topics')
 ICEBERG_DB = args.get('icebergdb')
 WAREHOUSE = args.get('warehouse')
 KAFKA_CONNECT = args.get('mskconnect')
+TABLECONFFILE = args.get('tablejsonfile')
+REGION = args.get('region')
 
 config = {
     "database_name": ICEBERG_DB,
     "warehouse": WAREHOUSE
 }
+
+tables_ds = load_tables_config(REGION, TABLECONFFILE)
+
 
 spark = SparkSession.builder \
     .config("spark.sql.extensions","org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions") \
@@ -72,11 +94,23 @@ logger.info("topics:" + TOPICS)
 logger.info("icebergdb:" + ICEBERG_DB)
 logger.info("warehouse:" + WAREHOUSE)
 logger.info("mskconnect:" + KAFKA_CONNECT)
+logger.info("table-config-file:" + TABLECONFFILE)
 
 
 
 def writeJobLogger(logs):
-    logger.info(args['JOB_NAME'] + " [custom log]:{0}".format(logs))
+    logger.info(args['JOB_NAME'] + " [CUSTOM-LOG]:{0}".format(logs))
+
+### Check Parameter
+if TABLECONFFILE == '':
+    logger.info("Need Parameter [table-config-file]")
+    sys.exit(1)
+elif KAFKA_CONNECT == '':
+    logger.info("Need Parameter [mskconnect]")
+    sys.exit(1)
+elif WAREHOUSE == '':
+    logger.info("Need Parameter [warehouse]")
+    sys.exit(1)
 
 checkpoint_location = args["TempDir"] + "/" + args['JOB_NAME'] + "/checkpoint/" + "20230409-02" + "/"
 
@@ -205,20 +239,35 @@ def InsertDataLake(tableName,dataFrame):
     dyDataFrame = DynamicFrame.fromDF(dataFrame, glueContext, "from_data_frame").toDF().repartition(4, col("id"))
 
     ###如果表不存在，创建一个空表
-    # TempTable = "tmp_" + tableName + "_upsert"
-    # dyDataFrame.createOrReplaceTempView(TempTable)
     '''
     如果表不存在，新建。解决在 writeto 的时候，空表没有字段的问题。
     write.spark.accept-any-schema 用于在写入 DataFrame 时，Spark可以自适应字段。
     format-version 使用iceberg v2版本
     '''
+    format_version = "2"
+    write_merge_mode = "copy-on-write"
+    write_update_mode = "copy-on-write"
+    write_delete_mode = "copy-on-write"
+
+    for item in tables_ds:
+        if item['db'] == database_name and item['table'] == tableName:
+            format_version = item['format-version']
+            write_merge_mode = item['write.merge.mode']
+            write_update_mode = item['write.update.mode']
+            write_delete_mode = item['write.delete.mode']
+
+
     creattbsql = f"""CREATE TABLE IF NOT EXISTS glue_catalog.{database_name}.{tableName} 
           USING iceberg 
           TBLPROPERTIES ('write.distribution-mode'='hash',
-          'format-version'='2',
+          'format-version'='{format_version}',
+          'write.merge.mode'='{write_merge_mode}',
+          'write.update.mode'='{write_update_mode}',
+          'write.delete.mode'='{write_delete_mode}',
           'write.metadata.delete-after-commit.enabled'='true',
           'write.metadata.previous-versions-max'='10',
           'write.spark.accept-any-schema'='true')"""
+
     writeJobLogger("####### IF table not exists, create it:" + creattbsql)
     spark.sql(creattbsql)
 
@@ -234,10 +283,15 @@ def MergeIntoDataLake(tableName, dataFrame):
     # table_name = tableIndexs[tableName]
     dyDataFrame = DynamicFrame.fromDF(dataFrame, glueContext, "from_data_frame").toDF()
 
+    primary_key = 'ID'
+    for item in tables_ds:
+        if item['db'] == database_name and item['table'] == tableName:
+            primary_key = item['primary_key']
+
     TempTable = "tmp_" + tableName + "_upsert"
     dyDataFrame.createOrReplaceTempView(TempTable)
 
-    query = f"""MERGE INTO glue_catalog.{database_name}.{tableName} t USING (SELECT * FROM {TempTable}) u ON t.ID = u.ID
+    query = f"""MERGE INTO glue_catalog.{database_name}.{tableName} t USING (SELECT * FROM {TempTable}) u ON t.{primary_key} = u.{primary_key}
             WHEN MATCHED THEN UPDATE
                 SET *
             WHEN NOT MATCHED THEN INSERT * """
@@ -246,10 +300,16 @@ def MergeIntoDataLake(tableName, dataFrame):
 
 def DeleteDataFromDataLake(tableName, dataFrame):
     database_name = config["database_name"]
+    primary_key = 'ID'
+    for item in tables_ds:
+        if item['db'] == database_name and item['table'] == tableName:
+            primary_key = item['primary_key']
+
+    database_name = config["database_name"]
     dyDataFrame = DynamicFrame.fromDF(dataFrame, glueContext, "from_data_frame").toDF()
     dyDataFrame.createOrReplaceTempView("tmp_" + tableName + "_delete")
     query = f"""DELETE FROM glue_catalog.{database_name}.{tableName} AS t1 
-         where EXISTS (SELECT ID FROM tmp_{tableName}_delete WHERE t1.ID = ID)"""
+         where EXISTS (SELECT {primary_key} FROM tmp_{tableName}_delete WHERE t1.{primary_key} = {primary_key})"""
     spark.sql(query)
 # Script generated for node Apache Kafka
 kafka_options = {
