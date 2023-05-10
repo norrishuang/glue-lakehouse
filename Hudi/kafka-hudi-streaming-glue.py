@@ -149,7 +149,7 @@ def InsertDataLake(tableName, dataFrame):
 
     database_name = config["database_name"]
     primary_key = 'ID'
-    storage_type = 'COPY-ON-WRITE'
+    storage_type = 'COPY_ON_WRITE'
     sort_key = 'ID'
     for item in tables_ds:
         if item['db'] == database_name and item['table'] == tableName:
