@@ -1,6 +1,6 @@
 import sys
 from awsglue.transforms import *
-import boto3
+
 from awsglue.utils import getResolvedOptions
 from pyspark.sql.session import SparkSession
 from awsglue.context import GlueContext
@@ -9,48 +9,55 @@ from awsglue.job import Job
 from datetime import datetime
 from awsglue import DynamicFrame
 from pyspark.sql.functions import col, from_json, schema_of_json, current_timestamp
-from pyspark.sql.types import StructType, StructField, StringType, LongType, IntegerType
+from pyspark.sql.types import StructType, StructField, StringType, LongType
+from urllib.parse import urlparse
+import boto3
+import json
 
 '''
 Glue Hudi Test
 通过 Glue 消费Kafka的数据，写S3（Hudi）。多表，支持I U D
 '''
-## @params: [JOB_NAME]
-args = getResolvedOptions(sys.argv, ['JOB_NAME'])
-
 
 
 HUDI_FORMAT = "org.apache.hudi"
 config = {
-    "table_name": "user_order_list",
     "database_name": "hudi",
-
     "primary_key": "id",
     "sort_key": "id",
-    "commits_to_retain": "4",
-    "streaming_db": "kafka_db",
-    "streaming_table": "kafka_iceberg_norrisdb_01"
+    "commits_to_retain": "4"
 }
 
+def load_tables_config(aws_region, config_s3_path):
+    o = urlparse(config_s3_path, allow_fragments=False)
+    client = boto3.client('s3', region_name=aws_region)
+    data = client.get_object(Bucket=o.netloc, Key=o.path.lstrip('/'))
+    file_content = data['Body'].read().decode("utf-8")
+    json_content = json.loads(file_content)
+    return json_content
 
+## @params: [JOB_NAME]
+args = getResolvedOptions(sys.argv, ['JOB_NAME',
+                                     'starting_offsets_of_kafka_topic',
+                                     'topics',
+                                     'mskconnect',
+                                     'tablejsonfile',
+                                     'region'])
 
-#源表对应iceberg目标表（多表处理）
-tableIndexs = {
-    "portfolio": "iceberg_portfolio_10",
-    "portfolio_02": "portfolio_02",
-    "table02": "table02",
-    "table01": "table01",
-    "user_order_list_small_file": "user_order_list_small_file",
-    "user_order_list": "user_order_list_01",
-    "user_order_main": "user_order_main",
-    "user_order_mor": "user_order_mor",
-    "tb_schema_evolution": "tb_schema_evolution"
-}
+'''
+获取Glue Job参数
+'''
+STARTING_OFFSETS_OF_KAFKA_TOPIC = args.get('starting_offsets_of_kafka_topic')
+TOPICS = args.get('topics')
+KAFKA_CONNECT = args.get('mskconnect')
+TABLECONFFILE = args.get('tablejsonfile')
+REGION = args.get('region')
 
+tables_ds = load_tables_config(REGION, TABLECONFFILE)
 
-args = getResolvedOptions(sys.argv, ['JOB_NAME'])
-
-spark = SparkSession.builder.config('spark.serializer','org.apache.spark.serializer.KryoSerializer').getOrCreate()
+spark = SparkSession.builder\
+    .config('spark.serializer', 'org.apache.spark.serializer.KryoSerializer')\
+    .getOrCreate()
 glueContext = GlueContext(spark.sparkContext)
 job = Job(glueContext)
 job.init(args['JOB_NAME'], args)
@@ -64,7 +71,7 @@ logger.info('Initialization.')
 output_path = "s3://myemr-bucket-01/data/"
 job_time_string = datetime.now().strftime("%Y%m%d%")
 s3_target = output_path + job_time_string
-checkpoint_location = args["TempDir"] + "/" + args['JOB_NAME'] + "/checkpoint/" + "checkpoint-04" + "/"
+checkpoint_location = args["TempDir"] + "/" + args['JOB_NAME'] + "/checkpoint/" + "checkpoint-01" + "/"
 
 # 把 dataframe 转换成字符串，在logger中输出
 def getShowString(df, n=10, truncate=True, vertical=False):
@@ -105,10 +112,10 @@ def processBatch(data_frame,batchId):
             # logger.info("############  MutiTables  ############### \r\n" + getShowString(dataTables,truncate = False))
             rowTables = datatables.collect()
 
-            for cols in rowTables :
+            for cols in rowTables:
                 tablename = cols[1]
                 dataDF = dataUpsert.select(col("after"),
-                                           from_json(col("source").cast("string"),schemaSource).alias("SOURCE")) \
+                                           from_json(col("source").cast("string"), schemaSource).alias("SOURCE")) \
                     .filter("SOURCE.table = '" + tablename + "'")
                 datajson = dataDF.select('after').first()
                 schemaData = schema_of_json(datajson[0])
@@ -127,7 +134,7 @@ def processBatch(data_frame,batchId):
                 .select(col("SOURCE.db"),col("SOURCE.table")).distinct()
 
             rowtables = datatables.collect()
-            for cols in rowtables :
+            for cols in rowtables:
                 tablename = cols[1]
                 dataDF = dataDelete.select(col("before"),
                                            from_json(col("source").cast("string"), schemasource).alias("SOURCE")) \
@@ -138,25 +145,34 @@ def processBatch(data_frame,batchId):
                 dataDFOutput = dataDF.select(from_json(col("before").cast("string"),schemaData).alias("DFDEL")).select(col("DFDEL.*"))
                 InsertDataLake(tablename, dataDFOutput)
 
-def InsertDataLake(tableName,dataFrame):
+def InsertDataLake(tableName, dataFrame):
 
     database_name = config["database_name"]
-    table_name = tableIndexs[tableName]
-    logger.info("##############  Func:InputDataLake [ " + tableName + "] ############# \r\n"
-                 + getShowString(dataFrame, truncate=False))
+    primary_key = 'ID'
+    storage_type = 'COPY-ON-WRITE'
+    sort_key = 'ID'
+    for item in tables_ds:
+        if item['db'] == database_name and item['table'] == tableName:
+            primary_key = item['primary_key']
+            sort_key = item['sort_key']
+            storage_type = item['storage_type']
 
-    target = "s3://myemr-bucket-01/data/hudi/" + table_name
+
+    # logger.info("##############  Func:InputDataLake [ " + tableName + "] ############# \r\n"
+    #              + getShowString(dataFrame, truncate=False))
+
+    target = "s3://myemr-bucket-01/data/hudi/" + tableName
 
     write_options={
-        "hoodie.table.name": table_name,
+        "hoodie.table.name": tableName,
         "className" : "org.apache.hudi",
-        "hoodie.datasource.write.storage.type": "COPY_ON_WRITE",
+        "hoodie.datasource.write.storage.type": storage_type,
         "hoodie.datasource.write.operation": "upsert",
-        "hoodie.datasource.write.recordkey.field": config["primary_key"],
-        "hoodie.datasource.write.precombine.field": config["sort_key"],
+        "hoodie.datasource.write.recordkey.field": primary_key,
+        "hoodie.datasource.write.precombine.field": sort_key,
         "hoodie.datasource.hive_sync.enable": "true",
         "hoodie.datasource.hive_sync.database": database_name,
-        "hoodie.datasource.hive_sync.table": table_name,
+        "hoodie.datasource.hive_sync.table": tableName,
         "hoodie.datasource.hive_sync.partition_extractor_class": "org.apache.hudi.hive.MultiPartKeysValueExtractor",
         "hoodie.datasource.hive_sync.use_jdbc": "false",
         "hoodie.datasource.hive_sync.mode": "hms",
@@ -167,12 +183,17 @@ def InsertDataLake(tableName,dataFrame):
                                                  connection_type="custom.spark",
                                                  connection_options=write_options)
 
+
 kafka_options = {
-      "connectionName": "kafka_conn_cdc",
-      "topicName": "norrisdb01.norrisdb.user_order_list",
-      "startingOffsets": "earliest",
-      "inferSchema": "true",
-      "classification": "json"
+    "connectionName": KAFKA_CONNECT,
+    "topicName": TOPICS,
+    "inferSchema": "true",
+    "classification": "json",
+    "startingOffsets": STARTING_OFFSETS_OF_KAFKA_TOPIC,
+    "kafka.security.protocol": "SASL_SSL",
+    "kafka.sasl.mechanism": "AWS_MSK_IAM",
+    "kafka.sasl.jaas.config": "software.amazon.msk.auth.iam.IAMLoginModule required;",
+    "kafka.sasl.client.callback.handler.class": "software.amazon.msk.auth.iam.IAMClientCallbackHandler"
 }
 
 # Script generated for node Apache Kafka
@@ -181,10 +202,11 @@ dataframe_ApacheKafka_source = glueContext.create_data_frame.from_options(
     connection_options=kafka_options
 )
 
-glueContext.forEachBatch(frame = dataframe_ApacheKafka_source,
-                         batch_function = processBatch,
-                         options = {
+glueContext.forEachBatch(frame=dataframe_ApacheKafka_source,
+                         batch_function=processBatch,
+                         options={
                              "windowSize": "30 seconds",
+                             "recordPollingLimit": "50000",
                              "checkpointLocation": checkpoint_location,
                              "batchMaxRetries": 1
                          })

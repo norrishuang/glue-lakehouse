@@ -1,0 +1,23 @@
+[
+  {
+    "db": "hudi",
+    "table": "user_order_list",
+    "primary_key": "id",
+    "sort_key": "id",
+    "storage_type": "COPY_ON_WRITE"
+  },
+  {
+    "db": "hudi",
+    "table": "customer_info",
+    "primary_key": "id",
+    "sort_key": "id",
+    "storage_type": "COPY_ON_WRITE"
+  },
+  {
+    "db": "hudi",
+    "table": "user_order_list_02",
+    "primary_key": "id",
+    "sort_key": "id",
+    "storage_type": "COPY_ON_WRITE"
+  }
+]
