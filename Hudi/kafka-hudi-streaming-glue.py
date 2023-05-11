@@ -191,17 +191,34 @@ def InsertDataLake(tableName, dataFrame):
                                                  connection_options=write_options)
 def DeleteDataFromDataLake(tableName, dataFrame):
     database_name = config["database_name"]
-    primary_key = 'ID'
+    primary_key = 'id'
     for item in tables_ds:
         if item['db'] == database_name and item['table'] == tableName:
             primary_key = item['primary_key']
 
     database_name = config["database_name"]
-    dyDataFrame = DynamicFrame.fromDF(dataFrame, glueContext, "from_data_frame").toDF()
-    dyDataFrame.createOrReplaceTempView("tmp_" + tableName + "_delete")
-    query = f"""DELETE FROM {database_name}.{tableName} AS t1 
-         where EXISTS (SELECT {primary_key} FROM tmp_{tableName}_delete WHERE t1.{primary_key} = {primary_key})"""
-    spark.sql(query)
+    # dyDataFrame = DynamicFrame.fromDF(dataFrame, glueContext, "from_data_frame").toDF()
+    # dyDataFrame.createOrReplaceTempView("tmp_" + tableName + "_delete")
+    # query = f"""DELETE FROM {database_name}.{tableName} AS t1
+    #      where EXISTS (SELECT {primary_key} FROM tmp_{tableName}_delete WHERE t1.{primary_key} = {primary_key})"""
+    # spark.sql(query)
+
+    write_options={
+        "hoodie.table.name": tableName,
+        "className": "org.apache.hudi",
+        "hoodie.datasource.write.operation": "delete",
+        "hoodie.datasource.write.recordkey.field": primary_key,
+        "hoodie.datasource.hive_sync.enable": "true",
+        "hoodie.datasource.hive_sync.database": database_name,
+        "hoodie.datasource.hive_sync.table": tableName,
+        "hoodie.datasource.hive_sync.partition_extractor_class": "org.apache.hudi.hive.MultiPartKeysValueExtractor",
+        "hoodie.datasource.hive_sync.use_jdbc": "false",
+        "hoodie.datasource.hive_sync.mode": "hms"
+    }
+
+    glueContext.write_dynamic_frame.from_options(frame=DynamicFrame.fromDF(dataFrame, glueContext, "outputDF"),
+                                                 connection_type="custom.spark",
+                                                 connection_options=write_options)
 
 kafka_options = {
     "connectionName": KAFKA_CONNECT,
