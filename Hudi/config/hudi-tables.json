@@ -18,6 +18,6 @@
     "table": "user_order_list_02",
     "primary_key": "id",
     "sort_key": "id",
-    "storage_type": "COPY_ON_WRITE"
+    "storage_type": "MERGE_ON_READ"
   }
 ]

@@ -8,7 +8,7 @@ from awsglue.context import GlueContext
 from awsglue.job import Job
 from datetime import datetime
 from awsglue import DynamicFrame
-from pyspark.sql.functions import col, from_json, schema_of_json, current_timestamp
+from pyspark.sql.functions import col, from_json, schema_of_json
 from pyspark.sql.types import StructType, StructField, StringType, LongType
 from urllib.parse import urlparse
 import boto3
@@ -27,6 +27,9 @@ config = {
     "sort_key": "id",
     "commits_to_retain": "4"
 }
+
+def writeJobLogger(logs):
+    logger.info(args['JOB_NAME'] + " [CUSTOM-LOG]:{0}".format(logs))
 
 def load_tables_config(aws_region, config_s3_path):
     o = urlparse(config_s3_path, allow_fragments=False)
@@ -71,7 +74,7 @@ logger.info('Initialization.')
 output_path = "s3://myemr-bucket-01/data/"
 job_time_string = datetime.now().strftime("%Y%m%d%")
 s3_target = output_path + job_time_string
-checkpoint_location = args["TempDir"] + "/" + args['JOB_NAME'] + "/checkpoint/" + "checkpoint-01" + "/"
+checkpoint_location = args["TempDir"] + "/" + args['JOB_NAME'] + "/checkpoint/" + "checkpoint-05" + "/"
 
 # 把 dataframe 转换成字符串，在logger中输出
 def getShowString(df, n=10, truncate=True, vertical=False):
@@ -121,10 +124,10 @@ def processBatch(data_frame,batchId):
                 schemaData = schema_of_json(datajson[0])
                 logger.info("############  Insert Into-GetSchema-FirstRow:" + datajson[0])
 
-                dataDFOutput = dataDF.select(from_json(col("after").cast("string"),schemaData).alias("DFADD")).select(col("DFADD.*"), current_timestamp().alias("ts"))
+                dataDFOutput = dataDF.select(from_json(col("after").cast("string"),schemaData).alias("DFADD")).select(col("DFADD.*"))
                 # logger.info("############  INSERT INTO  ############### \r\n" + getShowString(dataDFOutput,truncate = False))
                 InsertDataLake(tablename, dataDFOutput)
-
+                writeJobLogger("Add {0} records in Table:{1}".format(dataDFOutput.count(), tablename))
 
         if(dataDelete.count() > 0):
             sourcejson = dataDelete.select('source').first()
@@ -148,15 +151,19 @@ def processBatch(data_frame,batchId):
 def InsertDataLake(tableName, dataFrame):
 
     database_name = config["database_name"]
-    primary_key = 'ID'
+
+    #default
+    primary_key = 'id'
     storage_type = 'COPY_ON_WRITE'
-    sort_key = 'ID'
+    sort_key = 'id'
+
     for item in tables_ds:
         if item['db'] == database_name and item['table'] == tableName:
             primary_key = item['primary_key']
             sort_key = item['sort_key']
             storage_type = item['storage_type']
 
+    writeJobLogger("INSERT TABLE:{0} PRIMARY_KEY:{1} STORAGE_TYPE:{2}".format(tableName, primary_key, storage_type))
 
     # logger.info("##############  Func:InputDataLake [ " + tableName + "] ############# \r\n"
     #              + getShowString(dataFrame, truncate=False))
@@ -189,6 +196,7 @@ kafka_options = {
     "topicName": TOPICS,
     "inferSchema": "true",
     "classification": "json",
+    "failOnDataLoss": "false",
     "startingOffsets": STARTING_OFFSETS_OF_KAFKA_TOPIC,
     "kafka.security.protocol": "SASL_SSL",
     "kafka.sasl.mechanism": "AWS_MSK_IAM",

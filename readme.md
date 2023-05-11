@@ -14,19 +14,20 @@ AWS Glue 4.0 版本已经支持Hudi，Iceberg，DetlaLake
 
 
 
-## Iceberg
+## Glue 4.0 Iceberg
 
 - merge-on-read 支持通过 MERGE and UPDATE SQL语法（Spark 3.2 或更高版本）
-
-- - 通过merge into 支持upserts。使用直接复制-写的方式。需要更新的文件会立即被重写。
+  - 通过merge into 支持upserts。使用直接复制-写的方式。需要更新的文件会立即被重写。
 
 - 在 Spark 3.3版本中,支持 通过 `AS OF` 语法查询time travel
-
-- - Spark读取Iceberg表可以指定“***as-of-timestamp***”参数，通过指定一个毫秒时间参数查询Iceberg表中数据，iceberg会根据元数据找出***timestamp-ms <= as-of-timestamp 对应的 snapshot-id***
+  - Spark读取Iceberg表可以指定“***as-of-timestamp***”参数，通过指定一个毫秒时间参数查询Iceberg表中数据，iceberg会根据元数据找出***timestamp-ms <= as-of-timestamp 对应的 snapshot-id***
 
 - 新增支持通过DataFrame写操作 [`mergeSchema`](https://github.com/apache/iceberg/pull/4154)
+  - 设置TableProperties:”write.spark.accept-any-schema”为true。Spark默认在plan的时候会检查写入的DataFrame和表的schema是否匹配，不匹配就抛出异常。所以需要增加一个TableCapability（TableCapability.ACCEPT_ANY_SCHEMA），这样Spark就不会做这个检查，交由具体的DataSource来检查。`df.writeTo(tableName).option(“merge-schema”, “true”).XX`
+  - 建议使用Glue 4.0，Spark 3.1（Glue 3.0）不支持mergeSchema
 
-- - 设置TableProperties:”write.spark.accept-any-schema”为true。Spark默认在plan的时候会检查写入的DataFrame和表的schema是否匹配，不匹配就抛出异常。所以需要增加一个TableCapability（TableCapability.ACCEPT_ANY_SCHEMA），这样Spark就不会做这个检查，交由具体的DataSource来检查。`df.writeTo(tableName).option(“merge-schema”, “true”).XX`
+
+
 
 ### Iceberg Job 配置说明
 
@@ -40,8 +41,10 @@ AWS Glue 4.0 版本已经支持Hudi，Iceberg，DetlaLake
 | --starting_offsets_of_kafka_topic | earliest                                                     |      |
 | --topics                          |                                                              |      |
 | --user-jars-first                 | True                                                         |      |
-| --warehouse                       | s3://myemr-bucket-01/data/iceberg-folder/                    |      |
+| --warehouse                       | s3://<s3bucket>/data/iceberg-folder/                         |      |
 | --mskconnect                      | msk-serverless-connector                                     |      |
+| --tablejsonfile                   | 设置表的属性的配置文件路径，该文件存放在S3的指定目录。例：s3//<s3bucket>/config/table.json<br />配置属性例如 primary id，数据存储的类型（COW or MOR），使用Iceberg表的版本（V1/V2） |      |
+| --region                          | 指定使用的Region（例如, us-east-1）                          |      |
 
 
 

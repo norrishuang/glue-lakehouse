@@ -4,9 +4,10 @@
     "table":"user_order_list",
     "primary_key":"id",
     "format-version": 2,
-    "write.merge.mode":"merge-on-read",
-    "write.update.mode":"merge-on-read",
-    "write.delete.mode":"merge-on-read"
+    "write.merge.mode": "merge-on-read",
+    "write.update.mode": "merge-on-read",
+    "write.delete.mode": "merge-on-read",
+    "timestamp.fields": ["created_at","updated_at"]
   },
   {
     "db":"icebergdb",
@@ -15,7 +16,8 @@
     "format-version": 2,
     "write.merge.mode":"merge-on-read",
     "write.update.mode":"merge-on-read",
-    "write.delete.mode":"merge-on-read"
+    "write.delete.mode":"merge-on-read",
+    "timestamp.fields": ["created_at","updated_at"]
   },
   {
     "db":"icebergdb",
@@ -24,6 +26,7 @@
     "format-version": 2,
     "write.merge.mode":"merge-on-read",
     "write.update.mode":"merge-on-read",
-    "write.delete.mode":"merge-on-read"
+    "write.delete.mode":"merge-on-read",
+    "timestamp.fields": ["created_at","updated_at"]
   }
 ]

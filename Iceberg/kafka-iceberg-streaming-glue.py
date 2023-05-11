@@ -168,14 +168,11 @@ def processBatch(data_frame, batchId):
                 '''识别时间字段'''
 
                 dataDFOutput = dataDF.select(from_json(col("after").cast("string"), schemadata).alias("DFADD")).select(col("DFADD.*"), current_timestamp().alias("ts"))
-                # writeJobLogger("############ dataDFOutput Test Timestamp convert:" + getShowString(dataDFOutput, truncate=False))
-                # dataDFOutput.printSchema()
-                ### 对时间字段UTC 强制转换
-                #df2.withColumn("eventTime1", unix_timestamp($"eventTime", "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'").cast(TimestampType))
-                for cols in dataDFOutput.schema:
-                    if cols.name in ['created_at', 'updated_at']:
-                        dataDFOutput = dataDFOutput.withColumn(cols.name, to_timestamp(col(cols.name)))
-                        writeJobLogger("Covert time type-Column:" + cols.name)
+
+                # for cols in dataDFOutput.schema:
+                #     if cols.name in ['created_at', 'updated_at']:
+                #         dataDFOutput = dataDFOutput.withColumn(cols.name, to_timestamp(col(cols.name)))
+                #         writeJobLogger("Covert time type-Column:" + cols.name)
                 # dataDFOutput.printSchema()
                 # logger.info("############  INSERT INTO  ############### \r\n" + getShowString(dataDFOutput,truncate = False))
                 InsertDataLake(tableName, dataDFOutput)
@@ -204,10 +201,10 @@ def processBatch(data_frame, batchId):
                 dataDFOutput = dataDF.select(from_json(col("after").cast("string"), schemaData).alias("DFADD")).select(col("DFADD.*"), current_timestamp().alias("ts"))
 
                 ## 将时间字同步到UTC
-                for cols in dataDFOutput.schema:
-                    if cols.name in ['created_at', 'updated_at']:
-                        dataDFOutput = dataDFOutput.withColumn(cols.name, to_timestamp(col(cols.name)))
-                        writeJobLogger("Covert time type-Column:" + cols.name)
+                # for cols in dataDFOutput.schema:
+                #     if cols.name in ['created_at', 'updated_at']:
+                #         dataDFOutput = dataDFOutput.withColumn(cols.name, to_timestamp(col(cols.name)))
+                #         writeJobLogger("Covert time type-Column:" + cols.name)
 
                 writeJobLogger("############  MERGE INTO  ############### \r\n" + getShowString(dataDFOutput, truncate = False))
                 MergeIntoDataLake(tableName, dataDFOutput)
@@ -232,11 +229,11 @@ def processBatch(data_frame, batchId):
                 dataDFOutput = dataDF.select(from_json(col("before").cast("string"), schemaData).alias("DFDEL")).select(col("DFDEL.*"))
                 DeleteDataFromDataLake(tableName, dataDFOutput)
 
-def InsertDataLake(tableName,dataFrame):
+def InsertDataLake(tableName, dataFrame):
 
     database_name = config["database_name"]
     # partition as id
-    dyDataFrame = DynamicFrame.fromDF(dataFrame, glueContext, "from_data_frame").toDF().repartition(4, col("id"))
+
 
     ###如果表不存在，创建一个空表
     '''
@@ -248,6 +245,7 @@ def InsertDataLake(tableName,dataFrame):
     write_merge_mode = "copy-on-write"
     write_update_mode = "copy-on-write"
     write_delete_mode = "copy-on-write"
+    timestamp_fields = ""
 
     for item in tables_ds:
         if item['db'] == database_name and item['table'] == tableName:
@@ -255,7 +253,17 @@ def InsertDataLake(tableName,dataFrame):
             write_merge_mode = item['write.merge.mode']
             write_update_mode = item['write.update.mode']
             write_delete_mode = item['write.delete.mode']
+            if 'timestamp.fields' in item:
+                timestamp_fields = item['timestamp.fields']
 
+    if timestamp_fields != "":
+        ##Timestamp字段转换
+        for cols in dataFrame.schema:
+            if cols.name in timestamp_fields:
+                dataFrame = dataFrame.withColumn(cols.name, to_timestamp(col(cols.name)))
+                writeJobLogger("Covert time type-Column:" + cols.name)
+
+    dyDataFrame = DynamicFrame.fromDF(dataFrame, glueContext, "from_data_frame").toDF().repartition(4, col("id"))
 
     creattbsql = f"""CREATE TABLE IF NOT EXISTS glue_catalog.{database_name}.{tableName} 
           USING iceberg 
@@ -277,17 +285,23 @@ def InsertDataLake(tableName,dataFrame):
 
 def MergeIntoDataLake(tableName, dataFrame):
 
-    # logger.info("##############  Func:MergeIntoDataLake [ "+ tableName +  "] ############# \r\n"
-    #             + getShowString(dataFrame,truncate = False))
     database_name = config["database_name"]
-    # table_name = tableIndexs[tableName]
-    dyDataFrame = DynamicFrame.fromDF(dataFrame, glueContext, "from_data_frame").toDF()
-
     primary_key = 'ID'
+    timestamp_fields = ''
     for item in tables_ds:
         if item['db'] == database_name and item['table'] == tableName:
             primary_key = item['primary_key']
+            if 'timestamp.fields' in item :
+                timestamp_fields = item['timestamp.fields']
 
+    if timestamp_fields != '':
+        ##Timestamp字段转换
+        for cols in dataFrame.schema:
+            if cols.name in timestamp_fields:
+                dataFrame = dataFrame.withColumn(cols.name, to_timestamp(col(cols.name)))
+                writeJobLogger("Covert time type-Column:" + cols.name)
+
+    dyDataFrame = DynamicFrame.fromDF(dataFrame, glueContext, "from_data_frame").toDF()
     TempTable = "tmp_" + tableName + "_upsert"
     dyDataFrame.createOrReplaceTempView(TempTable)
 
