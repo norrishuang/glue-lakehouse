@@ -145,8 +145,8 @@ def processBatch(data_frame,batchId):
                 dataJson = dataDF.select('before').first()
 
                 schemaData = schema_of_json(dataJson[0])
-                dataDFOutput = dataDF.select(from_json(col("before").cast("string"),schemaData).alias("DFDEL")).select(col("DFDEL.*"))
-                InsertDataLake(tablename, dataDFOutput)
+                dataDFOutput = dataDF.select(from_json(col("before").cast("string"), schemaData).alias("DFDEL")).select(col("DFDEL.*"))
+                DeleteDataFromDataLake(tablename, dataDFOutput)
 
 def InsertDataLake(tableName, dataFrame):
 
@@ -189,7 +189,19 @@ def InsertDataLake(tableName, dataFrame):
     glueContext.write_dynamic_frame.from_options(frame=DynamicFrame.fromDF(dataFrame, glueContext, "outputDF"),
                                                  connection_type="custom.spark",
                                                  connection_options=write_options)
+def DeleteDataFromDataLake(tableName, dataFrame):
+    database_name = config["database_name"]
+    primary_key = 'ID'
+    for item in tables_ds:
+        if item['db'] == database_name and item['table'] == tableName:
+            primary_key = item['primary_key']
 
+    database_name = config["database_name"]
+    dyDataFrame = DynamicFrame.fromDF(dataFrame, glueContext, "from_data_frame").toDF()
+    dyDataFrame.createOrReplaceTempView("tmp_" + tableName + "_delete")
+    query = f"""DELETE FROM {database_name}.{tableName} AS t1 
+         where EXISTS (SELECT {primary_key} FROM tmp_{tableName}_delete WHERE t1.{primary_key} = {primary_key})"""
+    spark.sql(query)
 
 kafka_options = {
     "connectionName": KAFKA_CONNECT,
