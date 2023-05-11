@@ -202,7 +202,7 @@ def DeleteDataFromDataLake(tableName, dataFrame):
     # query = f"""DELETE FROM {database_name}.{tableName} AS t1
     #      where EXISTS (SELECT {primary_key} FROM tmp_{tableName}_delete WHERE t1.{primary_key} = {primary_key})"""
     # spark.sql(query)
-
+    target = "s3://myemr-bucket-01/data/hudi/" + tableName
     write_options={
         "hoodie.table.name": tableName,
         "className": "org.apache.hudi",
@@ -213,7 +213,8 @@ def DeleteDataFromDataLake(tableName, dataFrame):
         "hoodie.datasource.hive_sync.table": tableName,
         "hoodie.datasource.hive_sync.partition_extractor_class": "org.apache.hudi.hive.MultiPartKeysValueExtractor",
         "hoodie.datasource.hive_sync.use_jdbc": "false",
-        "hoodie.datasource.hive_sync.mode": "hms"
+        "hoodie.datasource.hive_sync.mode": "hms",
+        "path": target
     }
 
     glueContext.write_dynamic_frame.from_options(frame=DynamicFrame.fromDF(dataFrame, glueContext, "outputDF"),
