@@ -7,7 +7,8 @@
     "write.merge.mode": "merge-on-read",
     "write.update.mode": "merge-on-read",
     "write.delete.mode": "merge-on-read",
-    "timestamp.fields": ["created_at","updated_at"]
+    "timestamp.fields": ["created_at","updated_at"],
+    "precombine_key": "updated_at"
   },
   {
     "db":"icebergdb",
@@ -17,7 +18,8 @@
     "write.merge.mode":"merge-on-read",
     "write.update.mode":"merge-on-read",
     "write.delete.mode":"merge-on-read",
-    "timestamp.fields": ["created_at","updated_at"]
+    "timestamp.fields": ["created_at","updated_at"],
+    "precombine_key": "updated_at"
   },
   {
     "db":"icebergdb",
@@ -27,6 +29,7 @@
     "write.merge.mode":"merge-on-read",
     "write.update.mode":"merge-on-read",
     "write.delete.mode":"merge-on-read",
-    "timestamp.fields": ["created_at","updated_at"]
+    "timestamp.fields": ["created_at","updated_at"],
+    "precombine_key": "updated_at"
   }
 ]

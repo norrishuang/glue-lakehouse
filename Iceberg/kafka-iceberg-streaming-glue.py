@@ -71,8 +71,8 @@ tables_ds = load_tables_config(REGION, TABLECONFFILE)
 
 
 spark = SparkSession.builder \
-    .config("spark.sql.extensions","org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions") \
-    .config("spark.sql.catalog.glue_catalog","org.apache.iceberg.spark.SparkCatalog") \
+    .config("spark.sql.extensions", "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions") \
+    .config("spark.sql.catalog.glue_catalog", "org.apache.iceberg.spark.SparkCatalog") \
     .config("spark.sql.catalog.glue_catalog.warehouse", config['warehouse']) \
     .config("spark.sql.catalog.glue_catalog.catalog-impl", "org.apache.iceberg.aws.glue.GlueCatalog") \
     .config("spark.sql.catalog.glue_catalog.io-impl", "org.apache.iceberg.aws.s3.S3FileIO")\
@@ -167,7 +167,7 @@ def processBatch(data_frame, batchId):
 
                 '''识别时间字段'''
 
-                dataDFOutput = dataDF.select(from_json(col("after").cast("string"), schemadata).alias("DFADD")).select(col("DFADD.*"), current_timestamp().alias("ts"))
+                dataDFOutput = dataDF.select(from_json(col("after").cast("string"), schemadata).alias("DFADD")).select(col("DFADD.*"))
 
                 # for cols in dataDFOutput.schema:
                 #     if cols.name in ['created_at', 'updated_at']:
@@ -196,9 +196,10 @@ def processBatch(data_frame, batchId):
 
                 ##由于merge into schema顺序的问题，这里schema从表中获取（顺序问题待解决）
                 database_name = config["database_name"]
-                schemaData = spark.table(f"glue_catalog.{database_name}.{tableName}").schema
-
-                dataDFOutput = dataDF.select(from_json(col("after").cast("string"), schemaData).alias("DFADD")).select(col("DFADD.*"), current_timestamp().alias("ts"))
+                schemadata = spark.table(f"glue_catalog.{database_name}.{tableName}").schema
+                # datajson = dataDF.select('after').first()
+                # schemadata = schema_of_json(datajson[0])
+                dataDFOutput = dataDF.select(from_json(col("after").cast("string"), schemadata).alias("DFADD")).select(col("DFADD.*"))
 
                 ## 将时间字同步到UTC
                 # for cols in dataDFOutput.schema:
@@ -206,7 +207,7 @@ def processBatch(data_frame, batchId):
                 #         dataDFOutput = dataDFOutput.withColumn(cols.name, to_timestamp(col(cols.name)))
                 #         writeJobLogger("Covert time type-Column:" + cols.name)
 
-                writeJobLogger("############  MERGE INTO  ############### \r\n" + getShowString(dataDFOutput, truncate = False))
+                writeJobLogger("############  MERGE INTO  ############### \r\n" + getShowString(dataDFOutput, truncate=False))
                 MergeIntoDataLake(tableName, dataDFOutput)
 
 
@@ -288,10 +289,14 @@ def MergeIntoDataLake(tableName, dataFrame):
     database_name = config["database_name"]
     primary_key = 'ID'
     timestamp_fields = ''
+    precombine_key = ''
     for item in tables_ds:
         if item['db'] == database_name and item['table'] == tableName:
-            primary_key = item['primary_key']
-            if 'timestamp.fields' in item :
+            if 'primary_key' in item:
+                primary_key = item['primary_key']
+            if 'precombine_key' in item:# 控制一批数据中对数据做了多次修改的情况，取最新的一条记录
+                precombine_key = item['precombine_key']
+            if 'timestamp.fields' in item:
                 timestamp_fields = item['timestamp.fields']
 
     if timestamp_fields != '':
@@ -305,10 +310,20 @@ def MergeIntoDataLake(tableName, dataFrame):
     TempTable = "tmp_" + tableName + "_upsert"
     dyDataFrame.createOrReplaceTempView(TempTable)
 
-    query = f"""MERGE INTO glue_catalog.{database_name}.{tableName} t USING (SELECT * FROM {TempTable}) u ON t.{primary_key} = u.{primary_key}
-            WHEN MATCHED THEN UPDATE
-                SET *
-            WHEN NOT MATCHED THEN INSERT * """
+    if precombine_key == '':
+        query = f"""MERGE INTO glue_catalog.{database_name}.{tableName} t USING (SELECT * FROM {TempTable}) u
+            ON t.{primary_key} = u.{primary_key}
+                WHEN MATCHED THEN UPDATE
+                    SET *
+                WHEN NOT MATCHED THEN INSERT * """
+    else:
+        query = f"""MERGE INTO glue_catalog.{database_name}.{tableName} t USING 
+        (SELECT a.* FROM {TempTable} a join (SELECT {primary_key},max({precombine_key}) as {precombine_key} from {TempTable} group by {primary_key}) b on
+            a.{primary_key} = b.{primary_key} and a.{precombine_key} = b.{precombine_key}) u
+            ON t.{primary_key} = u.{primary_key}
+                WHEN MATCHED THEN UPDATE
+                    SET *
+                WHEN NOT MATCHED THEN INSERT * """
     logger.info("####### Execute SQL:" + query)
     spark.sql(query)
 
