@@ -83,7 +83,7 @@ def getShowString(df, n=10, truncate=True, vertical=False):
     else:
         return df._jdf.showString(n, int(truncate), vertical)
 
-def processBatch(data_frame,batchId):
+def processBatch(data_frame, batchId):
     if (data_frame.count() > 0):
         schema = StructType([
             StructField("before", StringType(), True),
@@ -134,7 +134,7 @@ def processBatch(data_frame,batchId):
 
             schemasource = schema_of_json(sourcejson[0])
             datatables = dataDelete.select(from_json(col("source").cast("string"), schemasource).alias("SOURCE")) \
-                .select(col("SOURCE.db"),col("SOURCE.table")).distinct()
+                .select(col("SOURCE.db"), col("SOURCE.table")).distinct()
 
             rowtables = datatables.collect()
             for cols in rowtables:
@@ -164,9 +164,6 @@ def InsertDataLake(tableName, dataFrame):
             storage_type = item['storage_type']
 
     writeJobLogger("INSERT TABLE:{0} PRIMARY_KEY:{1} STORAGE_TYPE:{2}".format(tableName, primary_key, storage_type))
-
-    # logger.info("##############  Func:InputDataLake [ " + tableName + "] ############# \r\n"
-    #              + getShowString(dataFrame, truncate=False))
 
     target = "s3://myemr-bucket-01/data/hudi/" + tableName
 
