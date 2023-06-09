@@ -62,11 +62,10 @@ class CDCProcessUtil:
                 StructField("transaction", StringType(), True)
             ])
 
-            self._writeJobLogger(self, "############  Source Data from Kafka Batch[{}]  ############### \r\n {}".format(str(batchId),
-                                                                                                                  getShowString(data_frame, truncate=False)))
+            self._writeJobLogger(self, "## Source Data from Kafka Batch[{}] \r\n {}".format(str(batchId), getShowString(data_frame, truncate=False)))
 
             dataJsonDF = data_frame.select(from_json(col("value").cast("string"), schema).alias("data")).select(col("data.*"))
-            self._writeJobLogger(self, "############  Create DataFrame  ############### \r\n" + getShowString(dataJsonDF, truncate=False))
+            self._writeJobLogger(self, "## Create DataFrame \r\n" + getShowString(dataJsonDF, truncate=False))
 
             '''
             由于Iceberg没有主键，需要通过SQL来处理upsert的场景，需要识别CDC log中的 I/U/D 分别逻辑处理
