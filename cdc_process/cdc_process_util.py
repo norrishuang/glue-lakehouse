@@ -49,7 +49,7 @@ class CDCProcessUtil:
         return json_content
 
     def processBatch(self, data_frame_batch, batchId):
-        if (data_frame_batch.count() > 0):
+        if data_frame_batch.count() > 0:
 
             data_frame = data_frame_batch.cache()
 
@@ -76,7 +76,7 @@ class CDCProcessUtil:
 
             dataDelete = dataJsonDF.filter("op in ('d') and before is not null")
 
-            if(dataInsert.count() > 0):
+            if dataInsert.count() > 0:
                 #### 分离一个topics多表的问题。
                 # dataInsert = dataInsertDYF.toDF()
                 sourceJson = dataInsert.select('source').first()
@@ -103,9 +103,9 @@ class CDCProcessUtil:
                     dataDFOutput = dataDF.select(from_json(col("after").cast("string"), schemadata).alias("DFADD")).select(col("DFADD.*"))
 
                     # logger.info("############  INSERT INTO  ############### \r\n" + getShowString(dataDFOutput,truncate = False))
-                    self._InsertDataLake(self, tableName, dataDFOutput)
+                    self._InsertDataLake(tableName, dataDFOutput)
 
-            if(dataUpsert.count() > 0):
+            if dataUpsert.count() > 0:
                 #### 分离一个topics多表的问题。
                 sourcejson = dataUpsert.select('source').first()
                 schemasource = schema_of_json(sourcejson[0])
@@ -140,8 +140,7 @@ class CDCProcessUtil:
                     self._writeJobLogger("############  MERGE INTO  ############### \r\n" + getShowString(dataDFOutput, truncate=False))
                     self._MergeIntoDataLake(tableName, dataDFOutput, batchId)
 
-
-            if(dataDelete.count() > 0):
+            if dataDelete.count() > 0:
                 sourceJson = dataDelete.select('source').first()
 
                 schemaSource = schema_of_json(sourceJson[0])
