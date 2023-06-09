@@ -48,8 +48,6 @@ class CDCProcessUtil:
         json_content = json.loads(file_content)
         return json_content
 
-
-
     def processBatch(self, data_frame_batch, batchId):
         if (data_frame_batch.count() > 0):
 
@@ -65,10 +63,10 @@ class CDCProcessUtil:
             ])
 
             self._writeJobLogger(self, "############  Source Data from Kafka Batch[{}]  ############### \r\n {}".format(str(batchId),
-                                                                                                                  getShowString(self, data_frame, truncate=False)))
+                                                                                                                  getShowString(data_frame, truncate=False)))
 
             dataJsonDF = data_frame.select(from_json(col("value").cast("string"), schema).alias("data")).select(col("data.*"))
-            self._writeJobLogger(self, "############  Create DataFrame  ############### \r\n" + getShowString(self, dataJsonDF, truncate=False))
+            self._writeJobLogger(self, "############  Create DataFrame  ############### \r\n" + getShowString(dataJsonDF, truncate=False))
 
             '''
             由于Iceberg没有主键，需要通过SQL来处理upsert的场景，需要识别CDC log中的 I/U/D 分别逻辑处理
@@ -127,7 +125,7 @@ class CDCProcessUtil:
                                                from_json(col("source").cast("string"), schemasource).alias("SOURCE")) \
                         .filter("SOURCE.table = '" + tableName + "'")
 
-                    self._writeJobLogger(self, "MERGE INTO Table [" + tableName + "]\r\n" + getShowString(self, dataDF, truncate=False))
+                    self._writeJobLogger(self, "MERGE INTO Table [" + tableName + "]\r\n" + getShowString(dataDF, truncate=False))
                     ##由于merge into schema顺序的问题，这里schema从表中获取（顺序问题待解决）
                     database_name = self.config["database_name"]
 
@@ -140,7 +138,7 @@ class CDCProcessUtil:
                     print(schemadata)
                     dataDFOutput = dataDF.select(from_json(col("after").cast("string"), schemadata).alias("DFADD")).select(col("DFADD.*"))
 
-                    self._writeJobLogger(self, "############  MERGE INTO  ############### \r\n" + getShowString(self, dataDFOutput, truncate=False))
+                    self._writeJobLogger(self, "############  MERGE INTO  ############### \r\n" + getShowString(dataDFOutput, truncate=False))
                     self._MergeIntoDataLake(tableName, dataDFOutput, batchId)
 
 
