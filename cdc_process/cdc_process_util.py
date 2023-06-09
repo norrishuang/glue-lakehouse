@@ -120,7 +120,7 @@ class CDCProcessUtil:
 
                 for cols in rowtables:
                     tableName = cols[1]
-                    self._writeJobLogger("Upsert Table [%],Counts[%]".format(tableName, str(dataUpsert.count())))
+                    self._writeJobLogger(self, "Upsert Table [%],Counts[%]".format(tableName, str(dataUpsert.count())))
                     dataDF = dataUpsert.select(col("after"),
                                                from_json(col("source").cast("string"), schemasource).alias("SOURCE")) \
                         .filter("SOURCE.table = '" + tableName + "'")
