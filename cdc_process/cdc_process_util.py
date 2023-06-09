@@ -62,10 +62,10 @@ class CDCProcessUtil:
                 StructField("transaction", StringType(), True)
             ])
 
-            self._writeJobLogger(self, "## Source Data from Kafka Batch\r\n + " + getShowString(data_frame, truncate=False))
+            self._writeJobLogger("## Source Data from Kafka Batch\r\n + " + getShowString(data_frame, truncate=False))
 
             dataJsonDF = data_frame.select(from_json(col("value").cast("string"), schema).alias("data")).select(col("data.*"))
-            self._writeJobLogger(self, "## Create DataFrame \r\n" + getShowString(dataJsonDF, truncate=False))
+            self._writeJobLogger("## Create DataFrame \r\n" + getShowString(dataJsonDF, truncate=False))
 
             '''
             由于Iceberg没有主键，需要通过SQL来处理upsert的场景，需要识别CDC log中的 I/U/D 分别逻辑处理
@@ -90,13 +90,13 @@ class CDCProcessUtil:
 
                 for cols in rowtables:
                     tableName = cols[1]
-                    self._writeJobLogger(self, "Insert Table [%],Counts[%]".format(tableName, str(dataInsert.count())))
+                    self._writeJobLogger("Insert Table [%],Counts[%]".format(tableName, str(dataInsert.count())))
                     dataDF = dataInsert.select(col("after"),
                                                from_json(col("source").cast("string"), schemaSource).alias("SOURCE")) \
                         .filter("SOURCE.table = '" + tableName + "'")
                     datajson = dataDF.select('after').first()
                     schemadata = schema_of_json(datajson[0])
-                    self._writeJobLogger(self, "############  Insert Into-GetSchema-FirstRow:" + datajson[0])
+                    self._writeJobLogger("############  Insert Into-GetSchema-FirstRow:" + datajson[0])
 
                     '''识别时间字段'''
 
@@ -113,31 +113,31 @@ class CDCProcessUtil:
                 # 获取多表
                 datatables = dataUpsert.select(from_json(col("source").cast("string"), schemasource).alias("SOURCE")) \
                     .select(col("SOURCE.db"), col("SOURCE.table")).distinct()
-                self._writeJobLogger(self, "MERGE INTO Table Names \r\n"
+                self._writeJobLogger("MERGE INTO Table Names \r\n"
                                      + getShowString(self, datatables, truncate=False))
                 rowtables = datatables.collect()
 
                 for cols in rowtables:
                     tableName = cols[1]
-                    self._writeJobLogger(self, "Upsert Table [%],Counts[%]".format(tableName, str(dataUpsert.count())))
+                    self._writeJobLogger("Upsert Table [%],Counts[%]".format(tableName, str(dataUpsert.count())))
                     dataDF = dataUpsert.select(col("after"),
                                                from_json(col("source").cast("string"), schemasource).alias("SOURCE")) \
                         .filter("SOURCE.table = '" + tableName + "'")
 
-                    self._writeJobLogger(self, "MERGE INTO Table [" + tableName + "]\r\n" + getShowString(dataDF, truncate=False))
+                    self._writeJobLogger("MERGE INTO Table [" + tableName + "]\r\n" + getShowString(dataDF, truncate=False))
                     ##由于merge into schema顺序的问题，这里schema从表中获取（顺序问题待解决）
                     database_name = self.config["database_name"]
 
                     refreshtable = True
                     if refreshtable:
                         self.spark.sql(f"REFRESH TABLE glue_catalog.{database_name}.{tableName}")
-                        self._writeJobLogger(self, "Refresh table - True")
+                        self._writeJobLogger("Refresh table - True")
 
                     schemadata = self.spark.table(f"glue_catalog.{database_name}.{tableName}").schema
                     print(schemadata)
                     dataDFOutput = dataDF.select(from_json(col("after").cast("string"), schemadata).alias("DFADD")).select(col("DFADD.*"))
 
-                    self._writeJobLogger(self, "############  MERGE INTO  ############### \r\n" + getShowString(dataDFOutput, truncate=False))
+                    self._writeJobLogger("############  MERGE INTO  ############### \r\n" + getShowString(dataDFOutput, truncate=False))
                     self._MergeIntoDataLake(tableName, dataDFOutput, batchId)
 
 
@@ -151,7 +151,7 @@ class CDCProcessUtil:
                 rowTables = dataTables.collect()
                 for cols in rowTables:
                     tableName = cols[1]
-                    self._writeJobLogger(self, "Delete Table [%],Counts[%]".format(tableName, str(dataDelete.count())))
+                    self._writeJobLogger("Delete Table [%],Counts[%]".format(tableName, str(dataDelete.count())))
                     dataDF = dataDelete.select(col("before"),
                                                from_json(col("source").cast("string"), schemaSource).alias("SOURCE")) \
                         .filter("SOURCE.table = '" + tableName + "'")
@@ -159,7 +159,7 @@ class CDCProcessUtil:
 
                     schemaData = schema_of_json(dataJson[0])
                     dataDFOutput = dataDF.select(from_json(col("before").cast("string"), schemaData).alias("DFDEL")).select(col("DFDEL.*"))
-                    self._DeleteDataFromDataLake(self, tableName, dataDFOutput, batchId)
+                    self._DeleteDataFromDataLake(tableName, dataDFOutput, batchId)
 
     def _InsertDataLake(self, tableName, dataFrame):
 
@@ -191,7 +191,7 @@ class CDCProcessUtil:
             for cols in dataFrame.schema:
                 if cols.name in timestamp_fields:
                     dataFrame = dataFrame.withColumn(cols.name, to_timestamp(col(cols.name)))
-                    self.writeJobLogger(self, "Covert time type-Column:" + cols.name)
+                    self._writeJobLogger("Covert time type-Column:" + cols.name)
 
         #dyDataFrame = dataFrame.repartition(4, col("id"))
 
@@ -206,7 +206,7 @@ class CDCProcessUtil:
               'write.metadata.previous-versions-max'='10',
               'write.spark.accept-any-schema'='true')"""
 
-        self._writeJobLogger(self, "####### IF table not exists, create it:" + creattbsql)
+        self._writeJobLogger( "####### IF table not exists, create it:" + creattbsql)
         self.spark.sql(creattbsql)
 
         dataFrame.writeTo(f"glue_catalog.{database_name}.{tableName}") \
@@ -235,9 +235,9 @@ class CDCProcessUtil:
             for cols in dataFrame.schema:
                 if cols.name in timestamp_fields:
                     dataFrame = dataFrame.withColumn(cols.name, to_timestamp(col(cols.name)))
-                    self._writeJobLogger(self, "Covert time type-Column:" + cols.name)
+                    self._writeJobLogger("Covert time type-Column:" + cols.name)
 
-        self._writeJobLogger(self, "############  TEMP TABLE batch {}  ############### {}\r\n".format(str(batchId),
+        self._writeJobLogger("############  TEMP TABLE batch {}  ############### {}\r\n".format(str(batchId),
                                                                                                       getShowString(dataFrame, truncate=False)))
         t = time.time()  # 当前时间
         ts = (int(round(t * 1000000)))  # 微秒级时间戳
