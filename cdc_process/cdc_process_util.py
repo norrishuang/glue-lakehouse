@@ -62,7 +62,7 @@ class CDCProcessUtil:
                 StructField("transaction", StringType(), True)
             ])
 
-            self._writeJobLogger(self, "## Source Data from Kafka Batch[{batchid}] \r\n {df}".format( batchid = str(batchId), df = getShowString(data_frame, truncate=False)))
+            self._writeJobLogger(self, "## Source Data from Kafka Batch-{batchid} \r\n {df}".format( batchid = str(batchId), df = getShowString(data_frame, truncate=False)))
 
             dataJsonDF = data_frame.select(from_json(col("value").cast("string"), schema).alias("data")).select(col("data.*"))
             self._writeJobLogger(self, "## Create DataFrame \r\n" + getShowString(dataJsonDF, truncate=False))
