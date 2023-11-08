@@ -5,7 +5,7 @@ import getopt
 from urllib.parse import urlparse
 import boto3
 import json
-from cdc_process.cdc_process_util import CDCProcessUtil
+from cdc_praser.cdc_process_util import CDCProcessUtil
 
 
 '''

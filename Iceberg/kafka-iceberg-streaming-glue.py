@@ -5,11 +5,9 @@ from pyspark.sql.session import SparkSession
 from awsglue.context import GlueContext
 import json
 from awsglue.job import Job
-from awsglue import DynamicFrame
-from pyspark.sql.functions import col, from_json, schema_of_json, current_timestamp, to_timestamp
-from pyspark.sql.types import StructType, StructField, StringType, LongType
 from urllib.parse import urlparse
 import boto3
+from cdc_debezium_process_util import CDCProcessUtil
 
 '''
 Glue -> Kafka -> Iceberg -> S3
@@ -32,6 +30,8 @@ Glue -> Kafka -> Iceberg -> S3
 '''
 读去表配置文件
 '''
+
+
 def load_tables_config(aws_region, config_s3_path):
     o = urlparse(config_s3_path, allow_fragments=False)
     client = boto3.client('s3', region_name=aws_region)
@@ -48,7 +48,7 @@ args = getResolvedOptions(sys.argv, ['JOB_NAME',
                                      'icebergdb',
                                      'warehouse',
                                      'mskconnect',
-                                     'tablejsonfile',
+                                     'tableconffile',
                                      'region'])
 
 '''
@@ -56,28 +56,27 @@ args = getResolvedOptions(sys.argv, ['JOB_NAME',
 '''
 STARTING_OFFSETS_OF_KAFKA_TOPIC = args.get('starting_offsets_of_kafka_topic', 'latest')
 TOPICS = args.get('topics')
-ICEBERG_DB = args.get('icebergdb')
+DATABASE_NAME = args.get('icebergdb')
 WAREHOUSE = args.get('warehouse')
 KAFKA_CONNECT = args.get('mskconnect')
-TABLECONFFILE = args.get('tablejsonfile')
+TABLECONFFILE = args.get('tableconffile')
 REGION = args.get('region')
 
 config = {
-    "database_name": ICEBERG_DB,
+    "database_name": DATABASE_NAME,
     "warehouse": WAREHOUSE
 }
 
 tables_ds = load_tables_config(REGION, TABLECONFFILE)
-
 
 spark = SparkSession.builder \
     .config("spark.sql.extensions", "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions") \
     .config("spark.sql.catalog.glue_catalog", "org.apache.iceberg.spark.SparkCatalog") \
     .config("spark.sql.catalog.glue_catalog.warehouse", config['warehouse']) \
     .config("spark.sql.catalog.glue_catalog.catalog-impl", "org.apache.iceberg.aws.glue.GlueCatalog") \
-    .config("spark.sql.catalog.glue_catalog.io-impl", "org.apache.iceberg.aws.s3.S3FileIO")\
+    .config("spark.sql.catalog.glue_catalog.io-impl", "org.apache.iceberg.aws.s3.S3FileIO") \
     .config("spark.sql.ansi.enabled", "false") \
-    .config("spark.sql.iceberg.handle-timestamp-without-timezone", True)\
+    .config("spark.sql.iceberg.handle-timestamp-without-timezone", True) \
     .getOrCreate()
 sc = spark.sparkContext
 glueContext = GlueContext(sc)
@@ -85,21 +84,23 @@ glueContext = GlueContext(sc)
 job = Job(glueContext)
 job.init(args['JOB_NAME'], args)
 
+JOB_NAME = args['JOB_NAME']
+
 logger = glueContext.get_logger()
 
 logger.info("Init...")
 
 logger.info("starting_offsets_of_kafka_topic:" + STARTING_OFFSETS_OF_KAFKA_TOPIC)
 logger.info("topics:" + TOPICS)
-logger.info("icebergdb:" + ICEBERG_DB)
+logger.info("DATABASE_NAME:" + DATABASE_NAME)
 logger.info("warehouse:" + WAREHOUSE)
 logger.info("mskconnect:" + KAFKA_CONNECT)
 logger.info("table-config-file:" + TABLECONFFILE)
 
 
-
 def writeJobLogger(logs):
     logger.info(args['JOB_NAME'] + " [CUSTOM-LOG]:{0}".format(logs))
+
 
 ### Check Parameter
 if TABLECONFFILE == '':
@@ -114,6 +115,7 @@ elif WAREHOUSE == '':
 
 checkpoint_location = args["TempDir"] + "/" + args['JOB_NAME'] + "/checkpoint/" + "20230409-02" + "/"
 
+
 # 把 dataframe 转换成字符串，在logger中输出
 def getShowString(df, n=10, truncate=True, vertical=False):
     if isinstance(truncate, bool) and truncate:
@@ -121,225 +123,14 @@ def getShowString(df, n=10, truncate=True, vertical=False):
     else:
         return df._jdf.showString(n, int(truncate), vertical)
 
-def processBatch(data_frame, batchId):
-    if (data_frame.count() > 0):
-        schema = StructType([
-            StructField("before", StringType(), True),
-            StructField("after", StringType(), True),
-            StructField("source", StringType(), True),
-            StructField("op", StringType(), True),
-            StructField("ts_ms", LongType(), True),
-            StructField("transaction", StringType(), True)
-        ])
 
-        dataJsonDF = data_frame.select(from_json(col("$json$data_infer_schema$_temporary$").cast("string"), schema).alias("data")).select(col("data.*"))
-        writeJobLogger("############  Create DataFrame  ############### \r\n" + getShowString(dataJsonDF,truncate = False))
+process = CDCProcessUtil(spark,
+                         REGION,
+                         TABLECONFFILE,
+                         logger,
+                         JOB_NAME,
+                         DATABASE_NAME)
 
-        '''
-        由于Iceberg没有主键，需要通过SQL来处理upsert的场景，需要识别CDC log中的 I/U/D 分别逻辑处理
-        '''
-        dataInsert = dataJsonDF.filter("op in ('r','c') and after is not null")
-        # 过滤 区分 insert upsert delete
-        dataUpsert = dataJsonDF.filter("op in ('u') and after is not null")
-
-        dataDelete = dataJsonDF.filter("op in ('d') and before is not null")
-
-        if(dataInsert.count() > 0):
-            #### 分离一个topics多表的问题。
-            # dataInsert = dataInsertDYF.toDF()
-            sourceJson = dataInsert.select('source').first()
-            schemaSource = schema_of_json(sourceJson[0])
-
-            # 获取多表
-            datatables = dataInsert.select(from_json(col("source").cast("string"), schemaSource).alias("SOURCE")) \
-                .select(col("SOURCE.db"), col("SOURCE.table")).distinct()
-            # logger.info("############  MutiTables  ############### \r\n" + getShowString(dataTables,truncate = False))
-            rowtables = datatables.collect()
-
-            for cols in rowtables:
-                tableName = cols[1]
-                dataDF = dataInsert.select(col("after"),
-                                           from_json(col("source").cast("string"), schemaSource).alias("SOURCE")) \
-                    .filter("SOURCE.table = '" + tableName + "'")
-                datajson = dataDF.select('after').first()
-                schemadata = schema_of_json(datajson[0])
-                writeJobLogger("############  Insert Into-GetSchema-FirstRow:" + datajson[0])
-
-                '''识别时间字段'''
-
-                dataDFOutput = dataDF.select(from_json(col("after").cast("string"), schemadata).alias("DFADD")).select(col("DFADD.*"))
-
-                # for cols in dataDFOutput.schema:
-                #     if cols.name in ['created_at', 'updated_at']:
-                #         dataDFOutput = dataDFOutput.withColumn(cols.name, to_timestamp(col(cols.name)))
-                #         writeJobLogger("Covert time type-Column:" + cols.name)
-                # dataDFOutput.printSchema()
-                # logger.info("############  INSERT INTO  ############### \r\n" + getShowString(dataDFOutput,truncate = False))
-                InsertDataLake(tableName, dataDFOutput)
-
-        if(dataUpsert.count() > 0):
-            #### 分离一个topics多表的问题。
-            sourcejson = dataUpsert.select('source').first()
-            schemasource = schema_of_json(sourcejson[0])
-
-            # 获取多表
-            datatables = dataUpsert.select(from_json(col("source").cast("string"), schemasource).alias("SOURCE")) \
-                .select(col("SOURCE.db"), col("SOURCE.table")).distinct()
-            # logger.info("############  MutiTables  ############### \r\n" + getShowString(dataTables,truncate = False))
-            rowtables = datatables.collect()
-
-            for cols in rowtables:
-                tableName = cols[1]
-                dataDF = dataUpsert.select(col("after"),
-                                           from_json(col("source").cast("string"), schemasource).alias("SOURCE")) \
-                    .filter("SOURCE.table = '" + tableName + "'")
-
-                ##由于merge into schema顺序的问题，这里schema从表中获取（顺序问题待解决）
-                database_name = config["database_name"]
-                schemadata = spark.table(f"glue_catalog.{database_name}.{tableName}").schema
-                # datajson = dataDF.select('after').first()
-                # schemadata = schema_of_json(datajson[0])
-                dataDFOutput = dataDF.select(from_json(col("after").cast("string"), schemadata).alias("DFADD")).select(col("DFADD.*"))
-
-                ## 将时间字同步到UTC
-                # for cols in dataDFOutput.schema:
-                #     if cols.name in ['created_at', 'updated_at']:
-                #         dataDFOutput = dataDFOutput.withColumn(cols.name, to_timestamp(col(cols.name)))
-                #         writeJobLogger("Covert time type-Column:" + cols.name)
-
-                writeJobLogger("############  MERGE INTO  ############### \r\n" + getShowString(dataDFOutput, truncate=False))
-                MergeIntoDataLake(tableName, dataDFOutput)
-
-
-        if(dataDelete.count() > 0):
-            sourceJson = dataDelete.select('source').first()
-
-            schemaSource = schema_of_json(sourceJson[0])
-            dataTables = dataDelete.select(from_json(col("source").cast("string"), schemaSource).alias("SOURCE")) \
-                .select(col("SOURCE.db"), col("SOURCE.table")).distinct()
-
-            rowTables = dataTables.collect()
-            for cols in rowTables:
-                tableName = cols[1]
-                dataDF = dataDelete.select(col("before"),
-                                           from_json(col("source").cast("string"), schemaSource).alias("SOURCE")) \
-                    .filter("SOURCE.table = '" + tableName + "'")
-                dataJson = dataDF.select('before').first()
-
-                schemaData = schema_of_json(dataJson[0])
-                dataDFOutput = dataDF.select(from_json(col("before").cast("string"), schemaData).alias("DFDEL")).select(col("DFDEL.*"))
-                DeleteDataFromDataLake(tableName, dataDFOutput)
-
-def InsertDataLake(tableName, dataFrame):
-
-    database_name = config["database_name"]
-    # partition as id
-
-
-    ###如果表不存在，创建一个空表
-    '''
-    如果表不存在，新建。解决在 writeto 的时候，空表没有字段的问题。
-    write.spark.accept-any-schema 用于在写入 DataFrame 时，Spark可以自适应字段。
-    format-version 使用iceberg v2版本
-    '''
-    format_version = "2"
-    write_merge_mode = "copy-on-write"
-    write_update_mode = "copy-on-write"
-    write_delete_mode = "copy-on-write"
-    timestamp_fields = ""
-
-    for item in tables_ds:
-        if item['db'] == database_name and item['table'] == tableName:
-            format_version = item['format-version']
-            write_merge_mode = item['write.merge.mode']
-            write_update_mode = item['write.update.mode']
-            write_delete_mode = item['write.delete.mode']
-            if 'timestamp.fields' in item:
-                timestamp_fields = item['timestamp.fields']
-
-    if timestamp_fields != "":
-        ##Timestamp字段转换
-        for cols in dataFrame.schema:
-            if cols.name in timestamp_fields:
-                dataFrame = dataFrame.withColumn(cols.name, to_timestamp(col(cols.name)))
-                writeJobLogger("Covert time type-Column:" + cols.name)
-
-    dyDataFrame = DynamicFrame.fromDF(dataFrame, glueContext, "from_data_frame").toDF().repartition(4, col("id"))
-
-    creattbsql = f"""CREATE TABLE IF NOT EXISTS glue_catalog.{database_name}.{tableName} 
-          USING iceberg 
-          TBLPROPERTIES ('write.distribution-mode'='hash',
-          'format-version'='{format_version}',
-          'write.merge.mode'='{write_merge_mode}',
-          'write.update.mode'='{write_update_mode}',
-          'write.delete.mode'='{write_delete_mode}',
-          'write.metadata.delete-after-commit.enabled'='true',
-          'write.metadata.previous-versions-max'='10',
-          'write.spark.accept-any-schema'='true')"""
-
-    writeJobLogger("####### IF table not exists, create it:" + creattbsql)
-    spark.sql(creattbsql)
-
-    dyDataFrame.writeTo(f"glue_catalog.{database_name}.{tableName}") \
-        .option("merge-schema", "true") \
-        .option("check-ordering", "false").append()
-
-def MergeIntoDataLake(tableName, dataFrame):
-
-    database_name = config["database_name"]
-    primary_key = 'ID'
-    timestamp_fields = ''
-    precombine_key = ''
-    for item in tables_ds:
-        if item['db'] == database_name and item['table'] == tableName:
-            if 'primary_key' in item:
-                primary_key = item['primary_key']
-            if 'precombine_key' in item:# 控制一批数据中对数据做了多次修改的情况，取最新的一条记录
-                precombine_key = item['precombine_key']
-            if 'timestamp.fields' in item:
-                timestamp_fields = item['timestamp.fields']
-
-    if timestamp_fields != '':
-        ##Timestamp字段转换
-        for cols in dataFrame.schema:
-            if cols.name in timestamp_fields:
-                dataFrame = dataFrame.withColumn(cols.name, to_timestamp(col(cols.name)))
-                writeJobLogger("Covert time type-Column:" + cols.name)
-
-    dyDataFrame = DynamicFrame.fromDF(dataFrame, glueContext, "from_data_frame").toDF()
-    TempTable = "tmp_" + tableName + "_upsert"
-    dyDataFrame.createOrReplaceTempView(TempTable)
-
-    if precombine_key == '':
-        query = f"""MERGE INTO glue_catalog.{database_name}.{tableName} t USING (SELECT * FROM {TempTable}) u
-            ON t.{primary_key} = u.{primary_key}
-                WHEN MATCHED THEN UPDATE
-                    SET *
-                WHEN NOT MATCHED THEN INSERT * """
-    else:
-        query = f"""MERGE INTO glue_catalog.{database_name}.{tableName} t USING 
-        (SELECT a.* FROM {TempTable} a join (SELECT {primary_key},max({precombine_key}) as {precombine_key} from {TempTable} group by {primary_key}) b on
-            a.{primary_key} = b.{primary_key} and a.{precombine_key} = b.{precombine_key}) u
-            ON t.{primary_key} = u.{primary_key}
-                WHEN MATCHED THEN UPDATE
-                    SET *
-                WHEN NOT MATCHED THEN INSERT * """
-    logger.info("####### Execute SQL:" + query)
-    spark.sql(query)
-
-def DeleteDataFromDataLake(tableName, dataFrame):
-    database_name = config["database_name"]
-    primary_key = 'ID'
-    for item in tables_ds:
-        if item['db'] == database_name and item['table'] == tableName:
-            primary_key = item['primary_key']
-
-    database_name = config["database_name"]
-    dyDataFrame = DynamicFrame.fromDF(dataFrame, glueContext, "from_data_frame").toDF()
-    dyDataFrame.createOrReplaceTempView("tmp_" + tableName + "_delete")
-    query = f"""DELETE FROM glue_catalog.{database_name}.{tableName} AS t1 
-         where EXISTS (SELECT {primary_key} FROM tmp_{tableName}_delete WHERE t1.{primary_key} = {primary_key})"""
-    spark.sql(query)
 # Script generated for node Apache Kafka
 kafka_options = {
     "connectionName": KAFKA_CONNECT,
@@ -360,7 +151,7 @@ dataframe_ApacheKafka_source = glueContext.create_data_frame.from_options(
 )
 
 glueContext.forEachBatch(frame=dataframe_ApacheKafka_source,
-                         batch_function=processBatch,
+                         batch_function=process.processBatch,
                          options={
                              "windowSize": "30 seconds",
                              "recordPollingLimit": "50000",

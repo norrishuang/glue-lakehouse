@@ -1,0 +1,369 @@
+[
+  {
+    "db":"dev",
+    "table":"user_order_list",
+    "primary_key":"id",
+    "timestamp.fields": ["created_at","updated_at"],
+    "precombine_key": "updated_at"
+  },
+  {
+    "db":"dev",
+    "table":"user_order_list_01",
+    "primary_key":"id",
+    "timestamp.fields": ["created_at","updated_at"],
+    "precombine_key": "updated_at"
+  },
+  {
+    "db":"dev",
+    "table":"tb_user_order_list_01",
+    "primary_key":"id",
+    "timestamp.fields": ["created_at","updated_at"],
+    "precombine_key": "updated_at"
+  },
+  {
+    "db":"dev",
+    "table":"tb_user_order_list_02",
+    "primary_key":"id",
+    "timestamp.fields": ["created_at","updated_at"],
+    "precombine_key": "updated_at"
+  },
+  {
+    "db":"dev",
+    "table":"tb_user_order_list_03",
+    "primary_key":"id",
+    "timestamp.fields": ["created_at","updated_at"],
+    "precombine_key": "updated_at"
+  },
+  {
+    "db":"dev",
+    "table":"tb_user_order_list_04",
+    "primary_key":"id",
+    "timestamp.fields": ["created_at","updated_at"],
+    "precombine_key": "updated_at"
+  },
+  {
+    "db":"dev",
+    "table":"tb_user_order_list_05",
+    "primary_key":"id",
+    "timestamp.fields": ["created_at","updated_at"],
+    "precombine_key": "updated_at"
+  },
+  {
+    "db":"dev",
+    "table":"tb_user_order_list_06",
+    "primary_key":"id",
+    "timestamp.fields": ["created_at","updated_at"],
+    "precombine_key": "updated_at"
+  },
+  {
+    "db":"dev",
+    "table":"tb_user_order_list_07",
+    "primary_key":"id",
+    "timestamp.fields": ["created_at","updated_at"],
+    "precombine_key": "updated_at"
+  },
+  {
+    "db":"dev",
+    "table":"tb_user_order_list_08",
+    "primary_key":"id",
+    "timestamp.fields": ["created_at","updated_at"],
+    "precombine_key": "updated_at"
+  },
+  {
+    "db":"dev",
+    "table":"tb_user_order_list_09",
+    "primary_key":"id",
+    "timestamp.fields": ["created_at","updated_at"],
+    "precombine_key": "updated_at"
+  },
+  {
+    "db":"dev",
+    "table":"tb_user_order_list_10",
+    "primary_key":"id",
+    "timestamp.fields": ["created_at","updated_at"],
+    "precombine_key": "updated_at"
+  },
+  {
+    "db":"dev",
+    "table":"tb_user_order_list_11",
+    "primary_key":"id",
+    "timestamp.fields": ["created_at","updated_at"],
+    "precombine_key": "updated_at"
+  },
+  {
+    "db":"dev",
+    "table":"tb_user_order_list_12",
+    "primary_key":"id",
+    "timestamp.fields": ["created_at","updated_at"],
+    "precombine_key": "updated_at"
+  },
+  {
+    "db":"dev",
+    "table":"tb_user_order_list_13",
+    "primary_key":"id",
+    "timestamp.fields": ["created_at","updated_at"],
+    "precombine_key": "updated_at"
+  },
+  {
+    "db":"dev",
+    "table":"tb_user_order_list_14",
+    "primary_key":"id",
+    "timestamp.fields": ["created_at","updated_at"],
+    "precombine_key": "updated_at"
+  },
+  {
+    "db":"dev",
+    "table":"tb_user_order_list_15",
+    "primary_key":"id",
+    "timestamp.fields": ["created_at","updated_at"],
+    "precombine_key": "updated_at"
+  },
+  {
+    "db":"dev",
+    "table":"tb_user_order_list_16",
+    "primary_key":"id",
+    "timestamp.fields": ["created_at","updated_at"],
+    "precombine_key": "updated_at"
+  },
+  {
+    "db":"dev",
+    "table":"tb_user_order_list_17",
+    "primary_key":"id",
+    "timestamp.fields": ["created_at","updated_at"],
+    "precombine_key": "updated_at"
+  },
+  {
+    "db":"dev",
+    "table":"tb_user_order_list_18",
+    "primary_key":"id",
+    "timestamp.fields": ["created_at","updated_at"],
+    "precombine_key": "updated_at"
+  },
+  {
+    "db":"dev",
+    "table":"tb_user_order_list_19",
+    "primary_key":"id",
+    "timestamp.fields": ["created_at","updated_at"],
+    "precombine_key": "updated_at"
+  },
+  {
+    "db":"dev",
+    "table":"tb_user_order_list_20",
+    "primary_key":"id",
+    "timestamp.fields": ["created_at","updated_at"],
+    "precombine_key": "updated_at"
+  },
+  {
+    "db":"dev",
+    "table":"tb_user_order_list_21",
+    "primary_key":"id",
+    "timestamp.fields": ["created_at","updated_at"],
+    "precombine_key": "updated_at"
+  },
+  {
+    "db":"dev",
+    "table":"tb_user_order_list_22",
+    "primary_key":"id",
+    "timestamp.fields": ["created_at","updated_at"],
+    "precombine_key": "updated_at"
+  },
+  {
+    "db":"dev",
+    "table":"tb_user_order_list_23",
+    "primary_key":"id",
+    "timestamp.fields": ["created_at","updated_at"],
+    "precombine_key": "updated_at"
+  },
+  {
+    "db":"dev",
+    "table":"tb_user_order_list_24",
+    "primary_key":"id",
+    "timestamp.fields": ["created_at","updated_at"],
+    "precombine_key": "updated_at"
+  },
+  {
+    "db":"dev",
+    "table":"tb_user_order_list_25",
+    "primary_key":"id",
+    "timestamp.fields": ["created_at","updated_at"],
+    "precombine_key": "updated_at"
+  },
+  {
+    "db":"dev",
+    "table":"tb_user_order_list_26",
+    "primary_key":"id",
+    "timestamp.fields": ["created_at","updated_at"],
+    "precombine_key": "updated_at"
+  },
+  {
+    "db":"dev",
+    "table":"tb_user_order_list_27",
+    "primary_key":"id",
+    "timestamp.fields": ["created_at","updated_at"],
+    "precombine_key": "updated_at"
+  },
+  {
+    "db":"dev",
+    "table":"tb_user_order_list_28",
+    "primary_key":"id",
+    "timestamp.fields": ["created_at","updated_at"],
+    "precombine_key": "updated_at"
+  },
+  {
+    "db":"dev",
+    "table":"tb_user_order_list_29",
+    "primary_key":"id",
+    "timestamp.fields": ["created_at","updated_at"],
+    "precombine_key": "updated_at"
+  },
+  {
+    "db":"dev",
+    "table":"tb_user_order_list_30",
+    "primary_key":"id",
+    "timestamp.fields": ["created_at","updated_at"],
+    "precombine_key": "updated_at"
+  },
+  {
+    "db":"dev",
+    "table":"tb_user_order_list_31",
+    "primary_key":"id",
+    "timestamp.fields": ["created_at","updated_at"],
+    "precombine_key": "updated_at"
+  },
+  {
+    "db":"dev",
+    "table":"tb_user_order_list_32",
+    "primary_key":"id",
+    "timestamp.fields": ["created_at","updated_at"],
+    "precombine_key": "updated_at"
+  },
+  {
+    "db":"dev",
+    "table":"tb_user_order_list_33",
+    "primary_key":"id",
+    "timestamp.fields": ["created_at","updated_at"],
+    "precombine_key": "updated_at"
+  },
+  {
+    "db":"dev",
+    "table":"tb_user_order_list_34",
+    "primary_key":"id",
+    "timestamp.fields": ["created_at","updated_at"],
+    "precombine_key": "updated_at"
+  },
+  {
+    "db":"dev",
+    "table":"tb_user_order_list_35",
+    "primary_key":"id",
+    "timestamp.fields": ["created_at","updated_at"],
+    "precombine_key": "updated_at"
+  },
+  {
+    "db":"dev",
+    "table":"tb_user_order_list_36",
+    "primary_key":"id",
+    "timestamp.fields": ["created_at","updated_at"],
+    "precombine_key": "updated_at"
+  },
+  {
+    "db":"dev",
+    "table":"tb_user_order_list_37",
+    "primary_key":"id",
+    "timestamp.fields": ["created_at","updated_at"],
+    "precombine_key": "updated_at"
+  },
+  {
+    "db":"dev",
+    "table":"tb_user_order_list_38",
+    "primary_key":"id",
+    "timestamp.fields": ["created_at","updated_at"],
+    "precombine_key": "updated_at"
+  },
+  {
+    "db":"dev",
+    "table":"tb_user_order_list_39",
+    "primary_key":"id",
+    "timestamp.fields": ["created_at","updated_at"],
+    "precombine_key": "updated_at"
+  },
+  {
+    "db":"dev",
+    "table":"tb_user_order_list_40",
+    "primary_key":"id",
+    "timestamp.fields": ["created_at","updated_at"],
+    "precombine_key": "updated_at"
+  },
+  {
+    "db":"dev",
+    "table":"tb_user_order_list_41",
+    "primary_key":"id",
+    "timestamp.fields": ["created_at","updated_at"],
+    "precombine_key": "updated_at"
+  },
+  {
+    "db":"dev",
+    "table":"tb_user_order_list_42",
+    "primary_key":"id",
+    "timestamp.fields": ["created_at","updated_at"],
+    "precombine_key": "updated_at"
+  },
+  {
+    "db":"dev",
+    "table":"tb_user_order_list_43",
+    "primary_key":"id",
+    "timestamp.fields": ["created_at","updated_at"],
+    "precombine_key": "updated_at"
+  },
+
+  {
+    "db":"dev",
+    "table":"tb_user_order_list_44",
+    "primary_key":"id",
+    "timestamp.fields": ["created_at","updated_at"],
+    "precombine_key": "updated_at"
+  },
+
+  {
+    "db":"dev",
+    "table":"tb_user_order_list_45",
+    "primary_key":"id",
+    "timestamp.fields": ["created_at","updated_at"],
+    "precombine_key": "updated_at"
+  },
+
+  {
+    "db":"dev",
+    "table":"tb_user_order_list_46",
+    "primary_key":"id",
+    "timestamp.fields": ["created_at","updated_at"],
+    "precombine_key": "updated_at"
+  },
+  {
+    "db":"dev",
+    "table":"tb_user_order_list_47",
+    "primary_key":"id",
+    "timestamp.fields": ["created_at","updated_at"],
+    "precombine_key": "updated_at"
+  },
+  {
+    "db":"dev",
+    "table":"tb_user_order_list_48",
+    "primary_key":"id",
+    "timestamp.fields": ["created_at","updated_at"],
+    "precombine_key": "updated_at"
+  },
+  {
+    "db":"dev",
+    "table":"tb_user_order_list_49",
+    "primary_key":"id",
+    "timestamp.fields": ["created_at","updated_at"],
+    "precombine_key": "updated_at"
+  },
+  {
+    "db":"dev",
+    "table":"tb_user_order_list_50",
+    "primary_key":"id",
+    "timestamp.fields": ["created_at","updated_at"],
+    "precombine_key": "updated_at"
+  }
+]

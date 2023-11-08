@@ -1,3 +1,23 @@
+
+
+# Introduce
+
+## 目录
+
+```
+.
+├── code
+│   ├── cdc_praser 		# lambda 部署主文件
+│   ├── DeltaLake
+│   │       ├── kafka-deltalake-streaming-emrserverless.py    #cdc 摄入 datalake, emr serverless
+│   │				├── kafka-deltalake-streaming-glue.py             #cdc 摄入 datalake, glue
+│   ├── Hudi
+│   ├── Iceberg
+│   ├── redshift                    
+```
+
+
+
 # AWS Glue 
 
 
