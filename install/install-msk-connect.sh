@@ -3,7 +3,7 @@
 #parameter
 MSK_CONNECT_NAME=test-connect
 MYSQL_USERNAME=admin
-MYSQL_PASSWORD=Amazon123
+MYSQL_PASSWORD=<password>
 MYSQL_HOSTNAME=mysql-cdc-db.cghfgy0zyjlk.us-east-1.rds.amazonaws.com
 MSK_SERVERLESS_BOOTSTRAP=b-1.mskforgluestreaming.9o4iir.c13.kafka.us-east-1.amazonaws.com:9098,b-3.mskforgluestreaming.9o4iir.c13.kafka.us-east-1.amazonaws.com:9098,b-2.mskforgluestreaming.9o4iir.c13.kafka.us-east-1.amazonaws.com:9098
 MYSQL_DATABASE=norrisdb
