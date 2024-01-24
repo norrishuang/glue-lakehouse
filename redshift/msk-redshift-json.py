@@ -103,11 +103,6 @@ def getShowString(df, n=10, truncate=True, vertical=False):
     else:
         return df._jdf.showString(n, int(truncate), vertical)
 
-# Script generated for node Apache Kafka
-# dataframe_ApacheKafka_source = glueContext.create_data_frame.from_options(
-#     connection_type="kafka",
-#     connection_options=kafka_options
-# )
 
 dataframe_ApacheKafka_source = glueContext.create_data_frame.from_catalog(
     database="kafka_db",
@@ -115,14 +110,6 @@ dataframe_ApacheKafka_source = glueContext.create_data_frame.from_catalog(
     additional_options={"startingOffsets": "earliest", "inferSchema": "false", "emitConsumerLagMetrics": "true"},
     transformation_ctx="dataframe_KafkaStream_node1"
 )
-
-# reader = spark \
-#     .readStream \
-#     .format("kafka") \
-#     .options(**kafka_options)
-#
-# kafka_data = reader.load()
-# df = kafka_data.selectExpr("CAST(value AS STRING)")
 
 def processBatch(data_frame, batchId):
     logger.info("############  DATA CHECK  ############### \r\n" + getShowString(data_frame,truncate = False))
@@ -137,16 +124,6 @@ def processBatch(data_frame, batchId):
         dfr.withColumnRenamed("value", "data")
         logger.info("############  RENAME COLUMN  ############### \r\n" + getShowString(dfr,truncate = False))
 
-        # dfc.write \
-        #     .format("io.github.spark_redshift_community.spark.redshift") \
-        #     .option("url", "jdbc:redshift://{0}:{1}/{2}".format(redshift_host, redshift_port, redshift_database)) \
-        #     .option("dbtable", "{0}.{1}".format(redshift_schema,redshift_table)) \
-        #     .option("user", redshift_username) \
-        #     .option("password", redshift_password) \
-        #     .option("tempdir", redshift_tmpdir) \
-        #     .option("tempformat", tempformat) \
-        #     .option("extracopyoptions", "TRUNCATECOLUMNS region '{0}' maxerror {1} dateformat 'auto' timeformat 'auto'".format("ap-southeast-1", maxerror)) \
-        #     .option("aws_iam_role", redshift_iam_role).mode("append").save()
         redshiftWriteDF = DynamicFrame.fromDF(dfr, glueContext, "from_data_frame")
         logger.info("############  IMPORT redshift  ############### \r\n" + getShowString(redshiftWriteDF.toDF(), truncate = False))
         AmazonRedshift_node3 = glueContext.write_dynamic_frame.from_options(
@@ -161,21 +138,6 @@ def processBatch(data_frame, batchId):
             },
             transformation_ctx="AmazonRedshift_node3"
         )
-
-        ## Glue 处理 MERGE 的方式 将数据写入一个临时表，删除
-        # AmazonRedshift_node3 = glueContext.write_dynamic_frame.from_options(
-        #     frame=ChangeSchema_node2,
-        #     connection_type="redshift",
-        #     connection_options={
-        #         "postactions": "BEGIN; MERGE INTO public.vdp_test USING public.vdp_test_temp_b92724 ON vdp_test.code = vdp_test_temp_b92724.code WHEN MATCHED THEN UPDATE SET code = vdp_test_temp_b92724.code, cycle = vdp_test_temp_b92724.cycle, header = vdp_test_temp_b92724.header WHEN NOT MATCHED THEN INSERT VALUES (vdp_test_temp_b92724.code, vdp_test_temp_b92724.cycle, vdp_test_temp_b92724.header); DROP TABLE public.vdp_test_temp_b92724; END;",
-        #         "redshiftTmpDir": "s3://aws-glue-assets-812046859005-eu-central-1/temporary/",
-        #         "useConnectionProperties": "true",
-        #         "dbtable": "public.vdp_test_temp_b92724",
-        #         "connectionName": "redshift-sl",
-        #         "preactions": "CREATE TABLE IF NOT EXISTS public.vdp_test (code VARCHAR, cycle VARCHAR, header VARCHAR); DROP TABLE IF EXISTS public.vdp_test_temp_b92724; CREATE TABLE public.vdp_test_temp_b92724 (code VARCHAR, cycle VARCHAR, header VARCHAR);",
-        #     },
-        #     transformation_ctx="AmazonRedshift_node3",
-        # )
 
         logger.info(job_name + " - finish batch id: " + str(batchId))
 

@@ -13,14 +13,14 @@
 │   │				├── kafka-deltalake-streaming-glue.py             #cdc 摄入 datalake, glue
 │   ├── Hudi
 │   ├── Iceberg
-│   ├── redshift                    
+│   ├── redshift
+│   │       ├── cdc-redshift-streaming-glue.py      # glue 实现处理mysql binlog cdc数据，写入redshift
+│   │       ├── msk-redshift-json.py      # 从 msk 实时摄入json数据，写入 redshift（一行记录写入redshift一个字段）
 ```
 
 
 
 # AWS Glue 
-
-
 
 AWS Glue 4.0 版本已经支持Hudi，Iceberg，DetlaLake
 
@@ -89,3 +89,7 @@ AWS Glue 4.0 版本已经支持Hudi，Iceberg，DetlaLake
 
 [添加了一个配置](https://docs.delta.io/2.1.0/optimizations-oss.html#compaction-bin-packing)，在 Optimize 中使用 repartition(1) 而不是 coalesce(1) ，以便在压缩许多小文件时获得更好的性能。
 通过使用基于队列的方法来并行化压缩工作，[提高 Optimize 的性能](https://github.com/delta-io/delta/pull/1315)
+
+## Redshift
+
+### CDC 实时摄入
