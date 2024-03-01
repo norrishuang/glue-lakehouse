@@ -253,8 +253,10 @@ class CDCProcessUtil:
                     WHEN NOT MATCHED THEN INSERT * """
         else:
             query = f"""MERGE INTO glue_catalog.{database_name}.{tableName} t USING 
-            (SELECT a.* FROM global_temp.{TempTable} a join (SELECT {primary_key},max({precombine_key}) as {precombine_key} from global_temp.{TempTable} group by {primary_key}) b on
-                a.{primary_key} = b.{primary_key} and a.{precombine_key} = b.{precombine_key}) u
+            (SELECT a.* FROM global_temp.{TempTable} a join (SELECT {primary_key},{precombine_key},
+                row_number() over(PARTITION BY {primary_key},{precombine_key} ORDER BY {precombine_key} DESC) AS rank
+                    from global_temp.{TempTable}) b on
+                a.{primary_key} = b.{primary_key} and a.{precombine_key} = b.{precombine_key} and rank = 1) u
                 ON t.{primary_key} = u.{primary_key}
                     WHEN MATCHED THEN UPDATE
                         SET *
