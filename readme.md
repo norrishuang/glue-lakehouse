@@ -7,12 +7,13 @@
 ```
 .
 ├── code
-│   ├── cdc_praser 		# lambda 部署主文件
+│   ├── cdc_praser 		# cdc 解析公共方法
 │   ├── DeltaLake
 │   │       ├── kafka-deltalake-streaming-emrserverless.py    #cdc 摄入 datalake, emr serverless
 │   │				├── kafka-deltalake-streaming-glue.py             #cdc 摄入 datalake, glue
 │   ├── Hudi
 │   ├── Iceberg
+│   │       ├── kafka-iceberg-streaming-emrserverless.py       # cdc 摄入 Iceberg, emr serverless
 │   ├── redshift
 │   │       ├── cdc-redshift-streaming-glue.py      # glue 实现处理mysql binlog cdc数据，写入redshift
 │   │       ├── msk-redshift-json.py      # 从 msk 实时摄入json数据，写入 redshift（一行记录写入redshift一个字段）
@@ -90,6 +91,34 @@ AWS Glue 4.0 版本已经支持Hudi，Iceberg，DetlaLake
 [添加了一个配置](https://docs.delta.io/2.1.0/optimizations-oss.html#compaction-bin-packing)，在 Optimize 中使用 repartition(1) 而不是 coalesce(1) ，以便在压缩许多小文件时获得更好的性能。
 通过使用基于队列的方法来并行化压缩工作，[提高 Optimize 的性能](https://github.com/delta-io/delta/pull/1315)
 
+## EMR Serverless
+打包公共类
+```shell
+pip install wheel
+python setup.py bdist_wheel
+```
+
+打包 python
+```shell
+export S3_PATH=<s3-path>
+# python lib
+python3 -m venv cdc_venv
+
+source cdc_venv/bin/activate
+pip3 install --upgrade pip
+pip3 install boto3
+
+pip3 install ./dist/cdc_praser-0.1-py3-none-any.whl --force-reinstall
+
+pip3 install venv-pack
+venv-pack -f -o cdc_venv.tar.gz
+
+# upload s3
+aws s3 cp cdc_venv.tar.gz $S3_PATH
+```
+
+
 ## Redshift
 
 ### CDC 实时摄入
+
