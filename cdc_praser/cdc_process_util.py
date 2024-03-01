@@ -114,7 +114,7 @@ class CDCProcessUtil:
                 datatables = dataUpsert.select(from_json(col("source").cast("string"), schemasource).alias("SOURCE")) \
                     .select(col("SOURCE.db"), col("SOURCE.table")).distinct()
                 self._writeJobLogger("MERGE INTO Table Names \r\n"
-                                     + getShowString(self, datatables, truncate=False))
+                                     + getShowString(datatables, truncate=False))
                 rowtables = datatables.collect()
 
                 for cols in rowtables:
