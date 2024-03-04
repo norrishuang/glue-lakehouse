@@ -26,6 +26,10 @@ Kafka（MSK Serverless） -EMR Serverless -> Iceberg -> S3
     (9). kafkaserver: MSK 的 boostrap server
 4. 只有在spark3.3版本中，才能支持iceberg的schame自适应。
 5. MSK Serverless 认证只支持IAM，因此在Kafka连接的时候需要包含IAM认证相关的代码。
+
+Update 
+2024-03-04 为了应对Kafka源端出现的数据重复情况，将从Binlog日志中的 ts_ms 字段作为 precombine 字段使用。
+
 '''
 
 
