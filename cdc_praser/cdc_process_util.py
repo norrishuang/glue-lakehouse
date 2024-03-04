@@ -121,7 +121,7 @@ class CDCProcessUtil:
                     tableName = cols[1]
                     self._writeJobLogger("Upsert Table [%],Counts[%]".format(tableName, str(dataUpsert.count())))
                     dataDF = dataUpsert.select(col("after"),
-                                               from_json(col("source").cast("string"), schemasource).alias("SOURCE")) \
+                                               from_json(col("source").cast("string"), schemasource).alias("SOURCE"), col("ts_ms")) \
                         .filter("SOURCE.table = '" + tableName + "'")
 
                     self._writeJobLogger("MERGE INTO Table [" + tableName + "]\r\n" + getShowString(dataDF, truncate=False))
