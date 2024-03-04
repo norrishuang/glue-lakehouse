@@ -64,7 +64,7 @@ class CDCProcessUtil:
 
             self._writeJobLogger("## Source Data from Kafka Batch\r\n + " + getShowString(data_frame, truncate=False))
 
-            dataJsonDF = data_frame.select(from_json(col("value").cast("string"), schema).alias("data"), col("ts_ms")).select(col("data.*"), col("ts_ms"))
+            dataJsonDF = data_frame.select(from_json(col("value").cast("string"), schema).alias("data")).select(col("data.*"))
             self._writeJobLogger("## Create DataFrame \r\n" + getShowString(dataJsonDF, truncate=False))
 
             '''
