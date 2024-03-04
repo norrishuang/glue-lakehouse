@@ -242,6 +242,16 @@ class CDCProcessUtil:
             self.logger.info("####### Execute SQL({}):{}".format(TempTable, queryTemp))
             tmpDF = self.spark.sql(queryTemp)
 
+            ### DUBEG 查看更新的数据是否存在重复数据
+            DebugTable = "debug_merge_" + tableName + "_u_" + str(batchId) + "_" + str(ts)
+            tmpDF.createOrReplaceGlobalTempView(DebugTable)
+            debugQuery = f"""
+                SELECT {primary_key},ts_ms FROM global_temp.{DebugTable} a GROUP BY {primary_key},ts_ms HAVING count(*) > 1
+            """
+            debugDF = self.spark.sql(debugQuery)
+            self._writeJobLogger(f"############ DEBUG MERGE TEMP {DebugTable} ############### \r\n" + getShowString(debugDF, truncate=False))
+            self.spark.catalog.dropGlobalTempView(DebugTable)
+
             # 移除字段 op_ts
             mergeDF = tmpDF.drop("op_ts")
             MergeTempTable = "tmp_merge_" + tableName + "_u_" + str(batchId) + "_" + str(ts)
