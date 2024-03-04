@@ -1,8 +1,6 @@
 import sys
 import time
 
-from pyspark.sql import SparkSession
-import getopt
 from pyspark.sql.functions import col, from_json, schema_of_json, to_timestamp
 from pyspark.sql.types import StructType, StructField, StringType, LongType
 from urllib.parse import urlparse
@@ -256,10 +254,11 @@ class CDCProcessUtil:
 
             queryTemp = f"""
                 SELECT a.* FROM global_temp.{TempTable} a join 
-                (SELECT {primary_key},
+                (SELECT {primary_key},ts_ms,
                     row_number() over(PARTITION BY {primary_key} ORDER BY ts_ms DESC) AS rank 
                     FROM global_temp.{TempTable}) b 
                         ON a.{primary_key} = b.{primary_key} 
+                        and a.ts_ms = b.ts_ms
                         WHERE b.rank = 1
             """
             self.logger.info("####### Execute SQL({}):{}".format(TempTable, queryTemp))

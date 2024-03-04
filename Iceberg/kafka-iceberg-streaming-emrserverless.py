@@ -94,6 +94,8 @@ spark = SparkSession.builder \
     .config("spark.sql.catalog.glue_catalog.catalog-impl", "org.apache.iceberg.aws.glue.GlueCatalog") \
     .config("spark.sql.catalog.glue_catalog.io-impl", "org.apache.iceberg.aws.s3.S3FileIO") \
     .config("spark.sql.ansi.enabled", "false") \
+    .config("spark.sql.catalog.hive_prod.iceberg.handle-timestamp-without-timezone", True) \
+    .config("spark.sql.session.timeZone", "UTC+8") \
     .getOrCreate()
 
 sc = spark.sparkContext

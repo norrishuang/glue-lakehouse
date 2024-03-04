@@ -232,11 +232,11 @@ class CDCProcessUtil:
 
             queryTemp = f"""
                 SELECT a.* FROM global_temp.{TempTable} a join 
-                (SELECT {primary_key},{precombine_key},
+                (SELECT {primary_key},op_ts,
                     row_number() over(PARTITION BY {primary_key} ORDER BY op_ts DESC) AS rank 
                     FROM global_temp.{TempTable}) b 
                         ON a.{primary_key} = b.{primary_key} and 
-                           a.{precombine_key} = b.{precombine_key} and 
+                           a.op_ts = b.op_ts and 
                            b.rank = 1
             """
             self.logger.info("####### Execute SQL({}):{}".format(TempTable, queryTemp))
