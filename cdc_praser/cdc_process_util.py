@@ -64,7 +64,7 @@ class CDCProcessUtil:
 
             self._writeJobLogger("## Source Data from Kafka Batch\r\n + " + getShowString(data_frame, truncate=False))
 
-            dataJsonDF = data_frame.select(from_json(col("value").cast("string"), schema).alias("data")).select(col("data.*"))
+            dataJsonDF = data_frame.select(from_json(col("value").cast("string"), schema).alias("data"), col("ts_ms")).select(col("data.*"), col("ts_ms"))
             self._writeJobLogger("## Create DataFrame \r\n" + getShowString(dataJsonDF, truncate=False))
 
             '''
@@ -135,7 +135,7 @@ class CDCProcessUtil:
 
                     schemadata = self.spark.table(f"glue_catalog.{database_name}.{tableName}").schema
                     print(schemadata)
-                    dataDFOutput = dataDF.select(from_json(col("after").cast("string"), schemadata).alias("DFADD")).select(col("DFADD.*"))
+                    dataDFOutput = dataDF.select(from_json(col("after").cast("string"), schemadata).alias("DFADD"), col("ts_ms")).select(col("DFADD.*"), col("ts_ms"))
 
                     self._writeJobLogger("############  MERGE INTO  ############### \r\n" + getShowString(dataDFOutput, truncate=False))
                     self._MergeIntoDataLake(tableName, dataDFOutput, batchId)
@@ -243,6 +243,7 @@ class CDCProcessUtil:
         TempTable = "tmp_" + tableName + "_u_" + str(batchId) + "_" + str(ts)
         dataFrame.createOrReplaceGlobalTempView(TempTable)
 
+        MergeTempTable = ''
         ##dataFrame.sparkSession.sql(f"REFRESH TABLE {TempTable}")
         # 修改为全局试图OK，为什么？[待解决]
         if precombine_key == '':
@@ -252,15 +253,61 @@ class CDCProcessUtil:
                         SET *
                     WHEN NOT MATCHED THEN INSERT * """
         else:
+
+            queryTemp = f"""
+                SELECT a.* FROM global_temp.{TempTable} a join 
+                (SELECT {primary_key},
+                    row_number() over(PARTITION BY {primary_key} ORDER BY ts_ms DESC) AS rank 
+                    FROM global_temp.{TempTable}) b 
+                        ON a.{primary_key} = b.{primary_key} 
+                        WHERE b.rank = 1
+            """
+            self.logger.info("####### Execute SQL({}):{}".format(TempTable, queryTemp))
+            tmpDF = self.spark.sql(queryTemp)
+
+            ### DUBEG 查看更新的数据是否存在重复数据
+            DebugTable = "debug_merge_" + tableName + "_u_" + str(batchId) + "_" + str(ts)
+            tmpDF.createOrReplaceGlobalTempView(DebugTable)
+            debugQuery = f"""
+                SELECT {primary_key},ts_ms FROM {DebugTable} a GROUP BY {primary_key},ts_ms HAVING count(*) > 1
+            """
+            debugDF = self.spark.sql(debugQuery)
+            self._writeJobLogger(f"############ DEBUG MERGE TEMP {DebugTable} ############### \r\n" + getShowString(debugDF, truncate=False))
+
+            # 移除字段 ts_ms
+            mergeDF = tmpDF.drop("ts_ms")
+            MergeTempTable = "tmp_merge_" + tableName + "_u_" + str(batchId) + "_" + str(ts)
+
+            self._writeJobLogger(f"############ MERGE TEMP TABLE {MergeTempTable} ############### \r\n" + getShowString(mergeDF, truncate=False))
+
+            mergeDF.createOrReplaceGlobalTempView(MergeTempTable)
             query = f"""MERGE INTO glue_catalog.{database_name}.{tableName} t USING 
-            (SELECT a.* FROM global_temp.{TempTable} a join (SELECT {primary_key},{precombine_key},
-                row_number() over(PARTITION BY {primary_key},{precombine_key} ORDER BY {precombine_key} DESC) AS rank
-                    from global_temp.{TempTable}) b on
-                a.{primary_key} = b.{primary_key} and a.{precombine_key} = b.{precombine_key} and rank = 1) u
-                ON t.{primary_key} = u.{primary_key}
-                    WHEN MATCHED THEN UPDATE
-                        SET *
-                    WHEN NOT MATCHED THEN INSERT * """
+                (SELECT * FROM global_temp.{MergeTempTable}) u 
+                  ON t.{primary_key} = u.{primary_key}
+                     WHEN MATCHED THEN UPDATE
+                         SET *
+                     WHEN NOT MATCHED THEN INSERT * """
+
+            # query_test = f"""SELECT * FROM global_temp.{TempTable} a join (
+            #                 SELECT {primary_key},{precombine_key} FROM global_temp.{TempTable}
+            #                 GROUP BY {primary_key},{precombine_key} having count(*) > 1
+            #                 ) b on
+            #                     a.{primary_key} = b.{primary_key} and
+            #                     a.{precombine_key} = b.{precombine_key}"""
+            #
+            # self.logger.info("####### Execute SQL:" + query_test)
+            # dfTest = self.spark.sql(query_test)
+            # self._writeJobLogger("############  MERGE INTO  ############### \r\n" + getShowString(dfTest, truncate=False))
+            #
+            # query = f"""MERGE INTO glue_catalog.{database_name}.{tableName} t USING
+            # (SELECT distinct a.* FROM global_temp.{TempTable} a join (SELECT {primary_key},{precombine_key},
+            #     row_number() over(PARTITION BY {primary_key},{precombine_key} ORDER BY {precombine_key} DESC) AS rank
+            #         from global_temp.{TempTable}) b on
+            #     a.{primary_key} = b.{primary_key} and a.{precombine_key} = b.{precombine_key} and rank = 1) u
+            #     ON t.{primary_key} = u.{primary_key}
+            #         WHEN MATCHED THEN UPDATE
+            #             SET *
+            #         WHEN NOT MATCHED THEN INSERT * """
 
         self.logger.info("####### Execute SQL:" + query)
         try:
@@ -270,6 +317,8 @@ class CDCProcessUtil:
             self.logger.error(err)
             pass
         self.spark.catalog.dropGlobalTempView(TempTable)
+        if MergeTempTable != '':
+            self.spark.catalog.dropGlobalTempView(MergeTempTable)
 
 
     def _DeleteDataFromDataLake(self, tableName, dataFrame, batchId):
