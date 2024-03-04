@@ -273,6 +273,7 @@ class CDCProcessUtil:
             """
             debugDF = self.spark.sql(debugQuery)
             self._writeJobLogger(f"############ DEBUG MERGE TEMP {DebugTable} ############### \r\n" + getShowString(debugDF, truncate=False))
+            self.spark.catalog.dropGlobalTempView(DebugTable)
 
             # 移除字段 ts_ms
             mergeDF = tmpDF.drop("ts_ms")
