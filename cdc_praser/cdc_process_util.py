@@ -269,7 +269,7 @@ class CDCProcessUtil:
             DebugTable = "debug_merge_" + tableName + "_u_" + str(batchId) + "_" + str(ts)
             tmpDF.createOrReplaceGlobalTempView(DebugTable)
             debugQuery = f"""
-                SELECT {primary_key},ts_ms FROM {DebugTable} a GROUP BY {primary_key},ts_ms HAVING count(*) > 1
+                SELECT {primary_key},ts_ms FROM global_temp.{DebugTable} a GROUP BY {primary_key},ts_ms HAVING count(*) > 1
             """
             debugDF = self.spark.sql(debugQuery)
             self._writeJobLogger(f"############ DEBUG MERGE TEMP {DebugTable} ############### \r\n" + getShowString(debugDF, truncate=False))
