@@ -203,7 +203,7 @@ class CDCProcessUtil:
               'write.metadata.previous-versions-max'='10',
               'write.spark.accept-any-schema'='true')"""
 
-        self._writeJobLogger( "####### IF table not exists, create it:" + creattbsql)
+        self._writeJobLogger("####### IF table not exists, create it:" + creattbsql)
         self.spark.sql(creattbsql)
 
         dataFrame.writeTo(f"glue_catalog.{database_name}.{tableName}") \
